@@ -1,0 +1,16 @@
+[package]
+name = "beagle-core"
+version = "0.0.1"
+authors = ["Alex Couch <alcouch65@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+members = ["frontend", "ir"]
+
+[dependencies]
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm9-0" }
+
+ir = { path = "ir", version = "0.0.1" }
+frontend = { path = "frontend", version = "0.0.1" }
