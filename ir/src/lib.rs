@@ -1,5 +1,5 @@
 #[derive(Debug, Clone)]
-pub struct IRElement<'i>{
+pub struct IRElement<'i> {
     name: &'i str,
-    opcode: u8
+    opcode: u8,
 }

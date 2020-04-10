@@ -11,6 +11,7 @@ members = ["frontend", "ir"]
 
 [dependencies]
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm9-0" }
+futures = { version = "*", features = ["thread-pool"] }
 
 ir = { path = "ir", version = "0.0.1" }
 frontend = { path = "frontend", version = "0.0.1" }
