@@ -3,7 +3,9 @@ use std::path::Path;
 
 mod lexer;
 use lexer::tokens;
-// mod parser;
+
+mod parser;
+use parser::Parser;
 
 pub async fn begin_parsing(path: &Path) -> Result<()> {
     println!("Beginning parsing");
