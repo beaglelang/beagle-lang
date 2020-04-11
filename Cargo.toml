@@ -1,5 +1,5 @@
 [package]
-name = "beagle-core"
+name = "beaglec"
 version = "0.0.1"
 authors = ["Alex Couch <alcouch65@gmail.com>"]
 edition = "2018"

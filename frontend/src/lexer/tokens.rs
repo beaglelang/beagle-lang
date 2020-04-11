@@ -6,27 +6,36 @@ pub enum TokenType {
     RCurly,
     LBracket,
     RBracket,
+    QMark,
+    Hyphen,
 
     Comma,
     Dot,
     Semicolon,
+    Pipe,
 
     Plus,
     Minus,
     Star,
     Slash,
+    Backslash,
+    Underscore,
+    And,
+    Caret,
+    Tick,
 
     Bang,
-    BangEqual,
     Equal,
-    EqualEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
 
     Colon,
-    RArrow,
+    Apost,
+    Quote,
+    RAngle,
+    LAngle,
+    Percent,
+    Dollar,
+    Hash,
+    At,
 
     Identifier,
     String,
@@ -40,12 +49,11 @@ pub enum TokenType {
     KwLet,
     KwMut,
 
-    KwSelf,
     KwStruct,
     KwReturn,
-    KwModule,
+    KwMod,
     KwNative,
-    KwPub,
+    KwPublic,
 
     KwIf,
     KwElse,
@@ -57,9 +65,11 @@ pub enum TokenType {
 
     KwTrue,
     KwFalse,
-    KwNil,
+    KwNull,
+    KwNone,
 
     KwAs,
+    KwWith,
 
     Err,
     Eof,
@@ -93,6 +103,6 @@ impl<'a> Default for LexerToken<'a> {
 
 impl<'a> std::fmt::Display for LexerToken<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?},\n {:?},\n {}", self.type_, self.data, self.pos)
+        write!(f, "{:?},\n\t{:?},\n\t{}", self.type_, self.data, self.pos)
     }
 }
