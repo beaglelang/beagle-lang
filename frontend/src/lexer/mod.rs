@@ -101,19 +101,19 @@ impl<'a> Lexer<'a> {
         match self.current_char {
             Some((_, c)) if c.is_whitespace() => {
                 self.current_pos.next_col_end();
-                if c == '\n' || c == '\r'{
+                if c == '\n' || c == '\r' {
                     return self.current_char;
                 }
             }
             Some(_) => {
                 self.current_pos.next_col_end();
             }
-            _ => return prev_char
+            _ => return prev_char,
         }
         self.current_char
     }
 
-    fn advance(&mut self) -> Option<(usize, char)>{
+    fn advance(&mut self) -> Option<(usize, char)> {
         let prev_char = self.current_char;
         self.current_char = self.chars.next();
         // println!("advance: current_char {:?}", self.current_char);
@@ -121,13 +121,13 @@ impl<'a> Lexer<'a> {
             Some(_) => {
                 self.current_pos.next_col();
             }
-            _ => return prev_char
+            _ => return prev_char,
         }
         self.current_char
     }
 
-    fn is_delimiter(&self, c: char) -> Option<tokens::TokenType>{
-        match c{
+    fn is_delimiter(&self, c: char) -> Option<tokens::TokenType> {
+        match c {
             '=' => Some(tokens::TokenType::Equal),
             '(' => Some(tokens::TokenType::LParen),
             ')' => Some(tokens::TokenType::RParen),
@@ -159,101 +159,107 @@ impl<'a> Lexer<'a> {
             '&' => Some(tokens::TokenType::And),
             '^' => Some(tokens::TokenType::Caret),
             '`' => Some(tokens::TokenType::Tick),
-            _ => None
+            _ => None,
         }
     }
 
-    fn is_keyword(&self, identifier: &str) -> tokens::TokenType{
+    fn is_keyword(&self, identifier: &str) -> tokens::TokenType {
         match IDENT_MAP.get(identifier) {
             Some(token_type) => *token_type,
-            None => tokens::TokenType::Identifier
+            None => tokens::TokenType::Identifier,
         }
     }
 
-    fn number(&mut self) -> Option<tokens::LexerToken<'a>>{
+    fn number(&mut self) -> Option<tokens::LexerToken<'a>> {
         let start_idx = self.current_char?.0;
         let mut is_float = false;
-        while let Some((_, c)) = self.advance_end(){
+        while let Some((_, c)) = self.advance_end() {
             if c == '.' {
                 is_float = true;
                 self.advance_end();
-            }else if c.is_digit(10){
+            } else if c.is_digit(10) {
                 self.advance_end();
-            }else{
+            } else {
                 break;
             }
-        };
-        let slice = match self.input.get(start_idx - 1..self.current_char?.0){
+        }
+        let slice = match self.input.get(start_idx - 1..self.current_char?.0) {
             Some(s) => s,
             None => {
-                return Some(tokens::LexerToken{
+                return Some(tokens::LexerToken {
                     type_: tokens::TokenType::Err,
                     data: tokens::TokenData::String("Failed to index into source".to_string()),
-                    pos: self.current_pos
+                    pos: self.current_pos,
                 })
             }
         };
         let num_str = String::from(slice);
         let number = num_str.trim();
         // println!("number slice: {}", number);
-        Some(tokens::LexerToken{
+        Some(tokens::LexerToken {
             type_: tokens::TokenType::Number,
-            data: if is_float{
-                tokens::TokenData::Float(match number.parse::<f64>(){
+            data: if is_float {
+                tokens::TokenData::Float(match number.parse::<f64>() {
                     Ok(f) => f,
                     Err(e) => {
-                        return Some(tokens::LexerToken{
+                        return Some(tokens::LexerToken {
                             type_: tokens::TokenType::Err,
-                            data: tokens::TokenData::String(format!("Failed to parse float from source: {}", e)),
-                            pos: self.current_pos
+                            data: tokens::TokenData::String(format!(
+                                "Failed to parse float from source: {}",
+                                e
+                            )),
+                            pos: self.current_pos,
                         })
                     }
                 })
-            }else{
-                tokens::TokenData::Integer(match number.parse::<isize>(){
+            } else {
+                tokens::TokenData::Integer(match number.parse::<isize>() {
                     Ok(f) => f,
                     Err(e) => {
-                        return Some(tokens::LexerToken{
+                        return Some(tokens::LexerToken {
                             type_: tokens::TokenType::Err,
-                            data: tokens::TokenData::String(format!("Failed to parse integer from source: {}", e)),
-                            pos: self.current_pos
+                            data: tokens::TokenData::String(format!(
+                                "Failed to parse integer from source: {}",
+                                e
+                            )),
+                            pos: self.current_pos,
                         })
                     }
                 })
             },
-            pos: self.current_pos
+            pos: self.current_pos,
         })
     }
 
     #[inline]
-    fn string(&mut self) -> Option<tokens::LexerToken<'a>>{
+    fn string(&mut self) -> Option<tokens::LexerToken<'a>> {
         let start_idx = self.current_char?.0;
         self.advance().unwrap();
-        while let Some((_, c)) = self.advance_end(){
-            if c != '\"'{
-                self.advance_end().expect("Failed to advance the end position.");
-            }else{
+        while let Some((_, c)) = self.advance_end() {
+            if c != '\"' {
+                self.advance_end()
+                    .expect("Failed to advance the end position.");
+            } else {
                 break;
             }
         }
-        
-        let slice = match self.input.get(start_idx+1..self.current_char?.0){
+
+        let slice = match self.input.get(start_idx + 1..self.current_char?.0) {
             Some(s) => s,
             None => {
-                return Some(tokens::LexerToken{
+                return Some(tokens::LexerToken {
                     type_: tokens::TokenType::Err,
                     data: tokens::TokenData::Str("Failed to extract string from input source."),
-                    pos: self.current_pos
+                    pos: self.current_pos,
                 })
             }
         };
-        
-        Some(tokens::LexerToken{
+
+        Some(tokens::LexerToken {
             type_: tokens::TokenType::String,
             data: tokens::TokenData::Str(slice),
-            pos: self.current_pos
+            pos: self.current_pos,
         })
-
     }
 
     fn get_token(&mut self) -> Option<tokens::LexerToken<'a>> {
@@ -264,7 +270,7 @@ impl<'a> Lexer<'a> {
 
         match c {
             c if c.is_whitespace() => {
-                if c == '\n'{
+                if c == '\n' {
                     self.current_pos.next_line();
                 }
                 self.advance();
@@ -274,9 +280,7 @@ impl<'a> Lexer<'a> {
                 let start = i;
                 let end = loop {
                     match self.advance_end() {
-                        Some((i, c)) if !c.is_alphanumeric() => {
-                            break i
-                        },
+                        Some((i, c)) if !c.is_alphanumeric() => break i,
                         Some(_) => continue,
                         None => break self.input.len(),
                     }
@@ -287,42 +291,49 @@ impl<'a> Lexer<'a> {
                     type_,
                     data: tokens::TokenData::Str(identifier),
                     pos: self.current_pos,
-                })
-            },
-            '\"' => return match self.string(){
-                Some(t) => Some(t),
-                None => return Some(tokens::LexerToken{
-                    data: tokens::TokenData::String(format!("Unable to get string from input @ {:?}", self.current_pos)),
-                    type_: tokens::TokenType::Err,
-                    pos: self.current_pos
-                })
-            },
-            c if c.is_digit(10) => {
-                return self.number()
-            },
+                });
+            }
+            '\"' => {
+                return match self.string() {
+                    Some(t) => Some(t),
+                    None => {
+                        return Some(tokens::LexerToken {
+                            data: tokens::TokenData::String(format!(
+                                "Unable to get string from input @ {:?}",
+                                self.current_pos
+                            )),
+                            type_: tokens::TokenType::Err,
+                            pos: self.current_pos,
+                        })
+                    }
+                }
+            }
+            c if c.is_digit(10) => return self.number(),
             c if self.is_delimiter(c).is_some() => {
-                return Some(tokens::LexerToken{
+                return Some(tokens::LexerToken {
                     data: tokens::TokenData::String(c.to_string()),
                     type_: self.is_delimiter(c).unwrap(),
-                    pos: self.current_pos
+                    pos: self.current_pos,
                 });
-            },
-            _ => return Some(tokens::LexerToken {
-                type_: tokens::TokenType::Err,
-                data: tokens::TokenData::Str("Invalid character"),
-                pos: self.current_pos,
-            }),
+            }
+            _ => {
+                return Some(tokens::LexerToken {
+                    type_: tokens::TokenType::Err,
+                    data: tokens::TokenData::Str("Invalid character"),
+                    pos: self.current_pos,
+                })
+            }
         };
     }
 
     pub async fn start_tokenizing(&mut self) -> std::result::Result<(), String> {
         let sender_arc = self.token_sender.clone();
         let guard = sender_arc
-        .lock()
-        .expect("Unable to get token sender from arc mutex.");
+            .lock()
+            .expect("Unable to get token sender from arc mutex.");
         loop {
             let token = self.get_token();
-            match token{
+            match token {
                 Some(t) => {
                     guard
                         .send(t.clone())
@@ -332,14 +343,17 @@ impl<'a> Lexer<'a> {
                             break;
                         }
                         tokens::TokenType::Err => {
-                            return Err(format!("En error occurred while tokenizing input: {:?}", t).to_string())
+                            return Err(format!(
+                                "En error occurred while tokenizing input: {:?}",
+                                t
+                            )
+                            .to_string())
                         }
                         _ => self.advance(),
                     };
-                },
-                None => continue
+                }
+                None => continue,
             }
-            
         }
         Ok(())
     }

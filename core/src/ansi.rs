@@ -1,6 +1,6 @@
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
-pub enum Fg{
+pub enum Fg {
     Black = 30,
     Red,
     Green,
@@ -19,15 +19,15 @@ pub enum Fg{
     BrightWhite,
 }
 
-impl std::fmt::Display for Fg{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result{
+impl std::fmt::Display for Fg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\x1b[{}m", *self as u8)
     }
 }
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
-pub enum Bg{
+pub enum Bg {
     Black = 40,
     Red,
     Green,
@@ -46,8 +46,8 @@ pub enum Bg{
     BrightWhite,
 }
 
-impl std::fmt::Display for Bg{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result{
+impl std::fmt::Display for Bg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\x1b[{}m", *self as u8)
     }
 }

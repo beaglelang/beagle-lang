@@ -1,5 +1,5 @@
+use super::{type_signature::TypeSignature, Position};
 use serde::{Deserialize, Serialize};
-use super::{Position, type_signature::TypeSignature};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Module {
@@ -23,14 +23,14 @@ impl Module {
 }
 
 #[derive(Debug, Clone)]
-pub struct ChannelIr{
+pub struct ChannelIr {
     pub pos: Position,
     pub sig: TypeSignature,
-    pub ins: Instruction
+    pub ins: Instruction,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Instruction{
+pub enum Instruction {
     //The module being parsed, which needs a name.
     Module(String),
     //The start of a function. The name of the function is expected to follow.
