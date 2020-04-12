@@ -31,6 +31,8 @@ pub struct ChannelIr{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Instruction{
+    //The module being parsed, which needs a name.
+    Module(String),
     //The start of a function. The name of the function is expected to follow.
     Fn(String),
     //The start of a param. The name and type of the param must follow.
@@ -45,4 +47,5 @@ pub enum Instruction{
     Integer(i32),
     Float(f32),
     Bool(bool),
+    String(String),
 }

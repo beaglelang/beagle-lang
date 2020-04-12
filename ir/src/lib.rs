@@ -1,10 +1,10 @@
 use serde::{Serialize, Deserialize};
 
-mod hir;
-mod type_signature;
+pub mod hir;
+pub mod type_signature;
 
 const TAB_WIDTH: usize = 5;
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Position{
     pub start: (u32, u32),
     pub end: (u32, u32)

@@ -1,4 +1,5 @@
-#[derive(Debug, Copy, Clone)]
+#[repr(u8)]
+#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
 pub enum TokenType {
     LParen,
     RParen,

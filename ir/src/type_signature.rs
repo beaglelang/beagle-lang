@@ -29,6 +29,7 @@ pub enum PrimitiveType{
     Integer,
     Float,
     Bool,
+    String,
 }
 
 impl PrimitiveType{

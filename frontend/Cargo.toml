@@ -10,3 +10,4 @@ edition = "2018"
 futures = { version = "*", features = ["thread-pool"] }
 lazy_static = "*"
 ir = { path = "../ir", version = "0.0.1" }
+core = { path = "../core", version = "0.0.1" }

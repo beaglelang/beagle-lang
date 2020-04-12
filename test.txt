@@ -1,2 +1,2 @@
-let hello = world
-val sup = m8
+val hello = 5643
+val sup = "m8wut"
