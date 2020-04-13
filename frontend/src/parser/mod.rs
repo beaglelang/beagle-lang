@@ -60,7 +60,6 @@ impl<'a> Parser<'a> {
             Err(e) => LexerToken::default(),
             Ok(t) => t,
         };
-        println!("Received token: {:?}", self.next_token());
 
         Ok(())
     }
@@ -73,7 +72,6 @@ impl<'a> Parser<'a> {
     #[inline]
     pub fn emit_ir(&mut self, pos: Position, sig: TypeSignature, ins: Instruction) {
         let ir = ChannelIr { pos, sig, ins };
-        println!("Sending IR: {:?}", ir);
         self.ir_tx
             .lock()
             .expect("Failed to acquire lock on ir_tx sender.")

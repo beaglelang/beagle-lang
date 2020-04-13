@@ -175,7 +175,7 @@ impl<'a> Lexer<'a> {
     fn number(&mut self) -> Option<tokens::LexerToken<'a>> {
         let start_idx = self.current_char?.0;
         let mut is_float = false;
-        while let Some((_, c)) = self.advance_end() {
+        while let Some((_, c)) = self.current_char {
             if c == '.' {
                 is_float = true;
                 self.advance_end();
@@ -271,11 +271,10 @@ impl<'a> Lexer<'a> {
         };
 
         match c {
-            c if c.is_whitespace() => {
+            c if c.is_whitespace() || c.is_control() => {
                 if c == '\n' {
                     self.current_pos.next_line();
                 }
-                self.advance();
                 return None;
             }
             c if c.is_alphabetic() => {
@@ -354,7 +353,10 @@ impl<'a> Lexer<'a> {
                         _ => self.advance(),
                     };
                 }
-                None => continue,
+                None =>{
+                    self.advance();
+                     continue
+                },
             }
         }
         Ok(())
