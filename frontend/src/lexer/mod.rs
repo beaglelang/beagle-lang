@@ -1,8 +1,8 @@
+use core::pos::BiPos;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::io::Result;
 use std::sync::{mpsc, Arc, Mutex};
-use core::pos::BiPos;
 
 pub mod tokens;
 
@@ -303,10 +303,10 @@ impl<'a> Lexer<'a> {
                         _ => self.advance(),
                     };
                 }
-                None =>{
+                None => {
                     self.advance();
-                     continue
-                },
+                    continue;
+                }
             }
         }
         Ok(())

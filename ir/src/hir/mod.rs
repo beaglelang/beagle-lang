@@ -1,6 +1,6 @@
-use super::{type_signature::TypeSignature};
-use serde::{Deserialize, Serialize};
+use super::type_signature::TypeSignature;
 use core::pos::BiPos as Position;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Module {
@@ -15,16 +15,16 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn new(name: String) -> Self{
-        Module{
+    pub fn new(name: String) -> Self {
+        Module {
             name,
             instructions: Vec::new(),
             signatures: Vec::new(),
-            positions: Vec::new()
+            positions: Vec::new(),
         }
     }
 
-    pub fn push_ir(&mut self, ir: ChannelIr){
+    pub fn push_ir(&mut self, ir: ChannelIr) {
         self.push(ir.pos, ir.sig, ir.ins)
     }
 
@@ -62,5 +62,5 @@ pub enum Instruction {
     Float(f32),
     Bool(bool),
     String(String),
-    Eof
+    Halt,
 }

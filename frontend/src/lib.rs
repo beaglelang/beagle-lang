@@ -1,51 +1,72 @@
 use std::io::Result;
 use std::path::Path;
 
-mod lexer;
+pub mod lexer;
 use lexer::tokens;
 
 mod parser;
 use ir::hir::ChannelIr;
 use parser::Parser;
+use core::pos::BiPos;
 
 use std::sync::mpsc::channel;
 
-pub async fn begin_parsing(path: &Path) -> Result<()> {
-    let name = path.file_stem().unwrap().to_str().unwrap().to_string();
-    let instr = std::fs::read_to_string(&path)?;
-    let (token_tx, token_rx) = channel::<tokens::LexerToken>();
-    let mut lexer = lexer::Lexer::new(instr.as_str(), token_tx)?;
-    let (ir_tx, ir_rx) = channel::<Option<ChannelIr>>();
-    let mut parser = Parser::new(
-        name.clone(),
-        ir_tx,
-        token_rx,
-    );
+use notices::{
+    Notice,
+    NoticeLevel
+};
 
-    let lexer_task = async{
-        lexer.start_tokenizing().await.unwrap();
-    };
+pub struct Driver;
 
-    let parser_task = async{
-        parser.parse().await.unwrap();
-    };
-
-    futures::join!(lexer_task, parser_task);
-
-    let mut tir = ir::hir::Module::new(name);
-
-    for ir in ir_rx{
-        match ir{
-            Some(ir_) => match ir_.ins{
-                ir::hir::Instruction::Eof => break,
-                _ => tir.push(ir_.pos, ir_.sig, ir_.ins)
+impl Driver{
+    
+    pub async fn begin_parsing(&self, path: &Path) -> ir::hir::Module {
+        let name = path.file_stem().unwrap().to_str().unwrap().to_string();
+        let instr = std::fs::read_to_string(&path).unwrap();
+        
+        let (token_tx, token_rx) = channel::<tokens::LexerToken>();
+        let (ir_tx, ir_rx) = channel::<Option<ChannelIr>>();
+        let (notice_tx, notice_rx) = channel::<Option<Notice>>();
+    
+        let mut lexer = lexer::Lexer::new(instr.as_str(), token_tx.clone()).unwrap();
+        let parser_task = Parser::parse(name.clone(), ir_tx, token_rx, notice_tx);
+        let mut tir = ir::hir::Module::new(name.clone());
+    
+        let lexer_task = lexer.start_tokenizing();
+    
+        let notice_task = async{
+            loop{
+                match notice_rx.recv(){
+                    Ok(Some(n)) => {
+                        match n.level{
+                            NoticeLevel::Halt => break,
+                            _ => n.report(Some(instr.clone().as_str()))
+                        };
+                    },
+                    Ok(None) => continue,
+                    Err(m) => {
+                        println!("An error occurred while receiving notice from parser: {:?}", m.to_string());
+                        break;
+                    }
+                };
             }
-            _ => continue
-        }
-        // tir.push(ir.pos, ir.sig, ir.ins)
+        };
+        
+        
+        let ir_task = async{
+            while let Ok(Some(ir)) = ir_rx.recv() {
+                match ir.ins{
+                    ir::hir::Instruction::Halt => break,
+                    _ => tir.push(ir.pos, ir.sig, ir.ins)
+                };
+            }
+        };
+        let (lexer_result, parser_result, _, _) = futures::join!(lexer_task, parser_task, notice_task, ir_task);
+    
+        lexer_result.unwrap();
+        parser_result.unwrap();
+    
+        tir
     }
-
-    println!("{:?}", tir);
-
-    Ok(())
 }
+

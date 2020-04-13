@@ -10,8 +10,11 @@ use ir::{
 };
 
 use core::pos::BiPos as Position;
+use notices::{
+    NoticeLevel,
+};
 
-type IRError = Result<(), String>;
+type IRError = Result<(), ()>;
 
 pub(crate) fn nil_func<'a>(p: &mut Parser<'a>) -> IRError {
     panic!("This is a placehold func for parse rules. This represents a null pointer function. This should not have been called.")
@@ -24,12 +27,12 @@ pub fn module<'a>(p: &mut Parser<'a>) -> IRError {
         Instruction::Module(p.name.clone()),
     );
     while !p.check(TokenType::Eof) {
-        if let Err(m) = declaration_or_statement(p) {
-            return Err(format!("Failed to convert token to IR: {}", m));
+        if let Err(()) = declaration_or_statement(p) {
+            return Err(())
         }
         p.advance().unwrap();
     }
-    p.emit_ir(Position::default(), TypeSignature::None, Instruction::Eof);
+    p.emit_ir(Position::default(), TypeSignature::None, Instruction::Halt);
     Ok(())
 }
 
@@ -45,15 +48,14 @@ pub(crate) fn declaration<'a>(p: &mut Parser<'a>) -> IRError {
 }
 
 pub(crate) fn statement<'a>(p: &mut Parser<'a>) -> IRError {
-    match p.current_token().type_ {
+    let token = p.current_token();
+    match token.type_ {
         TokenType::KwVal => property_val(p)?,
         TokenType::KwVar => property_var(p)?,
         TokenType::KwLet => local_var(p)?,
         _ => {
-            return Err(format!(
-                "Incorrect statement: Not implemented: {:?}",
-                p.current_token()
-            ))
+            p.emit_notice(token.pos, NoticeLevel::Error, format!("Unexpected token found: {:?}", token).to_string());
+            return Err(())
         }
     }
     Ok(())
@@ -61,28 +63,31 @@ pub(crate) fn statement<'a>(p: &mut Parser<'a>) -> IRError {
 
 pub(crate) fn property_val<'a>(p: &mut Parser<'a>) -> IRError {
     let lpos = p.current_token().pos;
-    if p.consume(
-        TokenType::KwVal,
-        "Expected keyword 'val' for defining an immutable property.",
+    if !p.check_consume(
+        TokenType::KwVal
     )
-    .is_err()
     {
         let message = format!(
             "Expected a val keyword token, but instead got {}",
             p.current_token()
         );
-        return Err(message.to_string());
+        p.emit_notice(lpos, NoticeLevel::Error, message);
+        return Err(());
     }
     if !p.check(TokenType::Identifier) {
         let message = format!(
             "Expected an identifier token, but instead got {}",
             p.current_token()
         );
-        return Err(message.to_string());
+        p.emit_notice(lpos, NoticeLevel::Error, message);
+        return Err(());
     }
     let name = match p.current_token().data {
         TokenData::Str(s) => (*s).to_string(),
-        _ => panic!("Failed to extract string data from identifier token."),
+        _ => {
+            p.emit_notice(lpos, NoticeLevel::Error, "Failed to extract string data from identifier token.".to_string());
+            return Err(())
+        },
     };
     let (signature, is_untyped) = if p.check_consume(TokenType::Colon) {
         (
@@ -96,7 +101,16 @@ pub(crate) fn property_val<'a>(p: &mut Parser<'a>) -> IRError {
     };
 
     if !p.check_consume(TokenType::Equal) {
-        return Err("Value property must be initialized.".to_string());
+        p.emit_notice(lpos, NoticeLevel::Error, "Value property must be initialized.".to_string());
+        let found_token = match &p.current_token().data{
+            TokenData::Float(f) => f.to_string(),
+            TokenData::Integer(i) => i.to_string(),
+            TokenData::Str(s) => (*s).to_string(),
+            TokenData::String(s) => s.clone(),
+            &_ => "Unknown".to_string()
+        };
+        p.emit_notice(lpos, NoticeLevel::Error, format!("Expected '=' but instead got {:?}", found_token));
+        return Err(());
     }
     p.emit_ir(lpos, signature, Instruction::Property(name, false));
     expression(p).expect("Could not parse expression.");
@@ -114,21 +128,25 @@ pub(crate) fn property_var<'a>(p: &mut Parser<'a>) -> IRError {
 }
 
 pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
-    let mut was_error = p
-        .consume(
-            TokenType::KwVal,
-            "Expected keyword 'val' for defining an immutable property.",
-        )
-        .is_err();
-    let name = match p
-        .consume(
-            TokenType::Identifier,
-            "Expected an identifier for value property",
-        )
-        .unwrap()
-    {
-        TokenData::Str(s) => (*s).to_string(),
-        _ => panic!("Failed to extract string data from identifier token."),
+    if !p.check_consume(TokenType::KwLet){
+        p.emit_notice(
+            p.current_token().pos, 
+            NoticeLevel::Error, 
+            "Expected keyword 'let' for defining an immutable local variable.".to_string());
+    }
+    let token = p.prev_token();
+    let pos = token.pos;
+    let name = if p.current_token().type_ != TokenType::Identifier{
+        p.emit_notice(pos, NoticeLevel::Error, "Expected an identifier for value property".to_string());
+        return Err(())
+    }else {
+        match &token.data{
+            TokenData::Str(s) => (*s).to_string(),
+            _ => {
+                p.emit_notice(pos, NoticeLevel::Error, "Failed to extract string data from identifier token.".to_string());
+                return Err(()) 
+            },
+        }
     };
     let (signature, is_untyped) = if p.check_consume(TokenType::Colon) {
         (
@@ -138,21 +156,17 @@ pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
     } else {
         (TypeSignature::Untyped, false)
     };
+    p.emit_ir(pos, signature, Instruction::LocalVar(name.clone(), false));
 
-    if p.check_consume(TokenType::Equal) {
-        // if expression(p).is_err(){
-        //     was_error = true;
-        // }
-        if expression(p).is_err() {
-            was_error = true;
-        }
-        true
-    } else if is_untyped {
-        was_error = true;
-        return Err(format!("Local variable {} cannot go uninitialized.", name));
-    } else {
-        false
-    };
+    match p.consume(TokenType::Equal, "Expected an EQUAL token.") {
+        Ok(t) => {
+            p.advance().unwrap();
+            if expression(p).is_err() {
+                p.emit_notice(pos, NoticeLevel::Error, format!("Local variable {} cannot go uninitialized.", name));
+            }
+        },
+        Err(()) => return Err(())
+    }
     Ok(())
 }
 
@@ -163,7 +177,8 @@ fn expression<'a>(p: &mut Parser<'a>) -> IRError {
         .expect(format!("Could not find parse rule for current token: {:?}", token).as_str());
     let infix = rule.infix;
     if infix as usize == nil_func as usize {
-        return Err("Expected an infix function, but instead got nil_func".to_string());
+        p.emit_notice(token.pos, NoticeLevel::Error, "Expected an infix function, but instead got nil_func".to_string());
+        return Err(());
     }
     infix(p).unwrap();
     Ok(())
@@ -185,10 +200,11 @@ pub(crate) fn literal<'a>(p: &mut Parser<'a>) -> IRError {
                 );
             }
             _ => {
-                return Err(format!(
+                p.emit_notice(pos, NoticeLevel::Error, format!(
                     "Expected integer token data, but instead found {:?}",
                     current_token.data
-                ))
+                ));
+                return Err(())
             }
         },
         TokenType::String => match token_data {

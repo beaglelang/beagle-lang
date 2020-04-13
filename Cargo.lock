@@ -67,6 +67,7 @@ dependencies = [
  "futures",
  "ir",
  "lazy_static",
+ "notices",
 ]
 
 [[package]]

@@ -13,18 +13,25 @@ use core::pos::BiPos as Position;
 
 use std::sync::{Arc, Mutex};
 
+use notices::{
+    Notice,
+    NoticeLevel,
+};
+
 pub mod functions;
 pub mod rules;
 
-const CURRENT_TOKEN: usize = 0;
-const NEXT_TOKEN: usize = 1;
+const PREV_TOKEN: usize = 0;
+const CURRENT_TOKEN: usize = 1;
+const NEXT_TOKEN: usize = 2;
 
 pub struct Parser<'a> {
     pub(crate) name: String,
     pub(crate) ir_tx: Arc<Mutex<Sender<Option<ChannelIr>>>>,
     pub(crate) token_rx: Receiver<LexerToken<'a>>,
+    pub(crate) notice_tx: Sender<Option<Notice>>,
 
-    active_tokens: [LexerToken<'a>; 2],
+    active_tokens: [LexerToken<'a>; 3],
 }
 
 impl<'a> Parser<'a> {
@@ -32,27 +39,35 @@ impl<'a> Parser<'a> {
         name: String,
         ir_tx: Sender<Option<ChannelIr>>,
         token_rx: Receiver<LexerToken<'a>>,
+        notice_tx: Sender<Option<Notice>>,
     ) -> Self {
         Parser {
             name,
             ir_tx: Arc::new(Mutex::new(ir_tx)),
             token_rx,
-            active_tokens: [LexerToken::default(), LexerToken::default()],
+            notice_tx,
+            active_tokens: [LexerToken::default(), LexerToken::default(), LexerToken::default()],
         }
     }
 
     #[inline]
-    pub(crate) fn current_token(&mut self) -> &LexerToken<'a> {
+    pub(crate) fn current_token(&self) -> &LexerToken<'a> {
         &self.active_tokens[CURRENT_TOKEN]
     }
 
     #[inline]
-    pub(crate) fn next_token(&mut self) -> &LexerToken<'a> {
+    pub(crate) fn next_token(&self) -> &LexerToken<'a> {
         &self.active_tokens[NEXT_TOKEN]
     }
 
     #[inline]
+    pub(crate) fn prev_token(&self) -> &LexerToken<'a> {
+        &self.active_tokens[PREV_TOKEN]
+    }
+
+    #[inline]
     pub(crate) fn advance(&mut self) -> Result<(), String> {
+        self.active_tokens[PREV_TOKEN] = self.active_tokens[CURRENT_TOKEN].clone();
         self.active_tokens[CURRENT_TOKEN] = self.active_tokens[NEXT_TOKEN].clone();
         self.active_tokens[NEXT_TOKEN] = match self
             .token_rx
@@ -63,6 +78,35 @@ impl<'a> Parser<'a> {
         };
 
         Ok(())
+    }
+
+    pub(crate) fn emit_notice(&mut self, pos: Position, level: NoticeLevel, msg: String){
+        if level == NoticeLevel::Error{
+            if let Err(e) = self.ir_tx.lock().unwrap().send(Some(ChannelIr{
+                pos,
+                sig: TypeSignature::None,
+                ins: Instruction::Halt
+            })){
+                eprintln!(
+                    "{}Parser notice send error: {}{}",
+                    core::ansi::Fg::BrightRed,
+                    e,
+                    core::ansi::Fg::Reset
+                );
+            }
+        }
+
+        let notice = Notice{
+            from: "Parser".to_string(),
+            msg,
+            pos,
+            file: self.name.clone(),
+            level
+        };
+
+        if let Err(e) = self.notice_tx.send(Some(notice)){
+            eprintln!("{}Parser notice send error: {}{}", core::ansi::Fg::BrightRed, e, core::ansi::Fg::Reset);
+        }
     }
 
     #[inline]
@@ -96,18 +140,28 @@ impl<'a> Parser<'a> {
         type_: TokenType,
         error_message: &'static str,
     ) -> Result<&TokenData, ()> {
+        self.advance().unwrap();
         if self.check(type_) {
-            self.advance().unwrap();
             Ok(&self.current_token().data)
         } else {
-            panic!(error_message);
+            self.emit_notice(self.current_token().pos, NoticeLevel::Error, error_message.to_string());
+            return Err(())
         }
     }
 
-    pub async fn parse(&mut self) -> Result<(), String> {
-        self.advance().unwrap();
-        self.advance().unwrap();
-        functions::module(self).expect("Failed to parse module.");
-        Ok(())
+    pub async fn parse<'p>(name: String, ir_tx: Sender<Option<ChannelIr>>, token_rx: Receiver<LexerToken<'p>>, notice_tx: Sender<Option<Notice>>) -> Result<(), String> {
+        let mut parser = Parser::new(name, ir_tx, token_rx, notice_tx);
+        &parser.advance().unwrap();
+        &parser.advance().unwrap();
+        match functions::module(&mut parser){
+            Ok(()) => {
+                parser.emit_notice(Position::default(), NoticeLevel::Halt, "Halt".to_string());
+                return Ok(())
+            },
+            Err(_) => {
+                parser.emit_notice(Position::default(), NoticeLevel::Halt, "Halt".to_string());
+                return Err("An error occurred while parsing module".to_string())
+            }
+        }
     }
 }

@@ -10,7 +10,7 @@ use lazy_static::lazy_static;
 
 use std::collections::HashMap;
 
-pub(crate) type ParseFn = fn(&mut Parser) -> Result<(), String>;
+pub(crate) type ParseFn = fn(&mut Parser) -> Result<(), ()>;
 
 #[derive(Clone)]
 pub struct ParseRule {

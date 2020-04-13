@@ -1,2 +1,2 @@
-val hello = 5643
-val sup = "m8wut"
+val hello - 5643
+let sup = "m8wut"

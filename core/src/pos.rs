@@ -1,12 +1,22 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Position(pub usize, pub usize);
 impl Default for Position {
     fn default() -> Self {
         Self(1, 1)
     }
 }
+
+// impl std::fmt::Display for Position{
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(
+//             f,
+//             "start: line {}, col {}\n\tend: line {} col {}",
+//             self.start.0, self.start.1, self.end.0, self.end.1
+//         )
+//     }
+// }
 
 ///A position consisting of two positions. This is for tracking start and end for complex data.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -19,8 +29,8 @@ impl std::fmt::Display for BiPos {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "start: line {}, col {}\n\tend: line {} col {}",
-            self.start.0, self.start.1, self.end.0, self.end.1
+            "start: {:?}\n\tend: {:?}",
+            self.start, self.end
         )
     }
 }
