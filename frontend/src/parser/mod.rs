@@ -7,8 +7,9 @@ use std::sync::mpsc::{Receiver, Sender};
 use ir::{
     hir::{ChannelIr, Instruction},
     type_signature::TypeSignature,
-    Position,
 };
+
+use core::pos::BiPos as Position;
 
 use std::sync::{Arc, Mutex};
 
@@ -106,26 +107,7 @@ impl<'a> Parser<'a> {
     pub async fn parse(&mut self) -> Result<(), String> {
         self.advance().unwrap();
         self.advance().unwrap();
-        // self.emit_ir(
-        //     Position {
-        //         start: (0, 0),
-        //         end: (0, 0),
-        //     },
-        //     TypeSignature::None,
-        //     Instruction::Module("dummy".to_string()),
-        // );
         functions::module(self).expect("Failed to parse module.");
-        // self.ir_tx.lock().unwrap().send(
-        //     Some(
-        //         ChannelIr{
-        //             pos: Position{
-        //                 start: (0, 0),
-        //                 end: (0, 0)
-        //             },
-        //             sig: TypeSignature::None,
-        //             ins: Instruction::Module("dummy".to_string())
-        //         }
-        //     )).unwrap();
         Ok(())
     }
 }

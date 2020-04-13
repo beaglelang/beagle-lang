@@ -1,3 +1,5 @@
+use core::pos::BiPos;
+
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
 pub enum TokenType {
@@ -89,7 +91,7 @@ pub enum TokenData<'a> {
 pub struct LexerToken<'a> {
     pub type_: TokenType,
     pub data: TokenData<'a>,
-    pub pos: super::LexerPos,
+    pub pos: BiPos,
 }
 
 impl<'a> Default for LexerToken<'a> {
@@ -97,7 +99,7 @@ impl<'a> Default for LexerToken<'a> {
         LexerToken {
             type_: TokenType::Eof,
             data: TokenData::None,
-            pos: super::LexerPos::default(),
+            pos: BiPos::default(),
         }
     }
 }

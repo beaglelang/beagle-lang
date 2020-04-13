@@ -2,6 +2,7 @@ use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::io::Result;
 use std::sync::{mpsc, Arc, Mutex};
+use core::pos::BiPos;
 
 pub mod tokens;
 
@@ -18,62 +19,11 @@ lazy_static! {
     };
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Position(pub usize, pub usize);
-impl Default for Position {
-    fn default() -> Self {
-        Self(1, 1)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct LexerPos {
-    pub start: Position,
-    pub end: Position,
-}
-
-impl std::fmt::Display for LexerPos {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "start: line {}, col {}\n\tend: line {} col {}",
-            self.start.0, self.start.1, self.end.0, self.end.1
-        )
-    }
-}
-
-impl Default for LexerPos {
-    fn default() -> Self {
-        Self {
-            start: Position::default(),
-            end: Position::default(),
-        }
-    }
-}
-
-impl LexerPos {
-    fn next_line(&mut self) {
-        self.start.0 += 1;
-        self.start.1 = 0;
-        self.end = self.start;
-    }
-
-    fn next_col(&mut self) {
-        self.start = self.end;
-        self.start.1 += 1;
-        self.end.1 += 1;
-    }
-
-    fn next_col_end(&mut self) {
-        self.end.1 += 1;
-    }
-}
-
 pub struct Lexer<'a> {
     input: &'a str,
     chars: std::str::CharIndices<'a>,
     current_char: Option<(usize, char)>,
-    current_pos: LexerPos,
+    current_pos: BiPos,
 
     pub token_sender: Arc<Mutex<mpsc::Sender<tokens::LexerToken<'a>>>>,
 }
@@ -89,7 +39,7 @@ impl<'a> Lexer<'a> {
             input,
             chars,
             current_char,
-            current_pos: LexerPos::default(),
+            current_pos: BiPos::default(),
             token_sender: Arc::new(Mutex::new(token_tx)),
         });
         Ok(lexer)

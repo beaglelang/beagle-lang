@@ -7,8 +7,9 @@ use crate::{
 use ir::{
     hir::Instruction,
     type_signature::{PrimitiveType, TypeSignature},
-    Position,
 };
+
+use core::pos::BiPos as Position;
 
 type IRError = Result<(), String>;
 
@@ -97,11 +98,7 @@ pub(crate) fn property_val<'a>(p: &mut Parser<'a>) -> IRError {
     if !p.check_consume(TokenType::Equal) {
         return Err("Value property must be initialized.".to_string());
     }
-    let irpos = Position {
-        start: (lpos.start.0 as u32, lpos.start.1 as u32),
-        end: (lpos.end.0 as u32, lpos.start.1 as u32),
-    };
-    p.emit_ir(irpos, signature, Instruction::Property(name, false));
+    p.emit_ir(lpos, signature, Instruction::Property(name, false));
     expression(p).expect("Could not parse expression.");
     Ok(())
 }
@@ -175,16 +172,7 @@ fn expression<'a>(p: &mut Parser<'a>) -> IRError {
 pub(crate) fn literal<'a>(p: &mut Parser<'a>) -> IRError {
     // p.advance();
     let current_token = p.current_token();
-    let pos = Position {
-        start: (
-            current_token.pos.start.0 as u32,
-            current_token.pos.start.1 as u32,
-        ),
-        end: (
-            current_token.pos.end.0 as u32,
-            current_token.pos.end.1 as u32,
-        ),
-    };
+    let pos = current_token.pos;
     let token_type = current_token.type_;
     let token_data = current_token.data.clone();
     match token_type {

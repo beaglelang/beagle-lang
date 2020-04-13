@@ -1,11 +1,10 @@
 [package]
-name = "ir"
-version = "0.0.1"
+name = "notices"
+version = "0.1.0"
 authors = ["Alex Couch <alcouch65@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "*", features = ["derive"] }
-core = { path = "../core", version = "*" }
+core = { path = "../core", version = "0.0.1" }

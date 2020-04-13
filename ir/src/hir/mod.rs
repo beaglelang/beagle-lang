@@ -1,5 +1,6 @@
-use super::{type_signature::TypeSignature, Position};
+use super::{type_signature::TypeSignature};
 use serde::{Deserialize, Serialize};
+use core::pos::BiPos as Position;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Module {
@@ -21,6 +22,10 @@ impl Module {
             signatures: Vec::new(),
             positions: Vec::new()
         }
+    }
+
+    pub fn push_ir(&mut self, ir: ChannelIr){
+        self.push(ir.pos, ir.sig, ir.ins)
     }
 
     /// Push an instruction into the module

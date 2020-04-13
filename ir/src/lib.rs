@@ -1,21 +1,18 @@
 use serde::{Deserialize, Serialize};
 
+use core::pos::BiPos;
+
 pub mod hir;
 pub mod type_signature;
 
 const TAB_WIDTH: usize = 5;
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct Position {
-    pub start: (u32, u32),
-    pub end: (u32, u32),
+
+pub trait SourceOrigin{
+    fn locate_in_source(self, source: &str) -> Option<(usize, Vec<&str>, String)>;
 }
 
-impl Position {
-    pub const fn new(start: (u32, u32), end: (u32, u32)) -> Self {
-        Self { start, end }
-    }
-
-    pub fn locate_in_source(self, source: &str) -> Option<(usize, Vec<&str>, String)> {
+impl SourceOrigin for BiPos {
+    fn locate_in_source(self, source: &str) -> Option<(usize, Vec<&str>, String)> {
         let start_line = if self.start.0 > 3 {
             self.start.0 - 3
         } else {
