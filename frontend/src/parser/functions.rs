@@ -16,7 +16,7 @@ pub(crate) fn nil_func<'a>(p: &mut Parser<'a>) -> IRError {
     panic!("This is a placehold func for parse rules. This represents a null pointer function. This should not have been called.")
 }
 
-pub(crate) fn module<'a>(p: &mut Parser<'a>) -> IRError {
+pub fn module<'a>(p: &mut Parser<'a>) -> IRError {
     p.emit_ir(
         Position::default(),
         TypeSignature::None,
@@ -28,6 +28,7 @@ pub(crate) fn module<'a>(p: &mut Parser<'a>) -> IRError {
         }
         p.advance().unwrap();
     }
+    p.emit_ir(Position::default(), TypeSignature::None, Instruction::Eof);
     Ok(())
 }
 

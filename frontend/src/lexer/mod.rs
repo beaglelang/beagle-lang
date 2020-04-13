@@ -79,8 +79,10 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(input: &'a str) -> Result<(Box<Self>, mpsc::Receiver<tokens::LexerToken<'a>>)> {
-        let (tx, rx) = mpsc::channel();
+    pub fn new(
+        input: &'a str,
+        token_tx: mpsc::Sender<tokens::LexerToken<'a>>,
+    ) -> Result<Box<Lexer<'a>>> {
         let mut chars = input.char_indices();
         let current_char = chars.next();
         let lexer = Box::new(Lexer {
@@ -88,9 +90,9 @@ impl<'a> Lexer<'a> {
             chars,
             current_char,
             current_pos: LexerPos::default(),
-            token_sender: Arc::new(Mutex::new(tx)),
+            token_sender: Arc::new(Mutex::new(token_tx)),
         });
-        Ok((lexer, rx))
+        Ok(lexer)
     }
 
     fn advance_end(&mut self) -> Option<(usize, char)> {

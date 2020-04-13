@@ -14,6 +14,15 @@ pub struct Module {
 }
 
 impl Module {
+    pub fn new(name: String) -> Self{
+        Module{
+            name,
+            instructions: Vec::new(),
+            signatures: Vec::new(),
+            positions: Vec::new()
+        }
+    }
+
     /// Push an instruction into the module
     pub fn push(&mut self, pos: Position, sig: TypeSignature, ins: Instruction) {
         self.positions.push(pos);
@@ -48,4 +57,5 @@ pub enum Instruction {
     Float(f32),
     Bool(bool),
     String(String),
+    Eof
 }
