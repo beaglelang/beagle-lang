@@ -1,18 +1,16 @@
 use crate::{
-    parser::{functions, rules},
+    parser::{functions, rules, ParseContext},
     tokens::{LexerToken, TokenData, TokenType},
     Parser,
 };
 
 use ir::{
     hir::Instruction,
-    type_signature::{PrimitiveType, TypeSignature},
+    type_signature::{PrimitiveType, TypeSignature, NamedTypeSignature},
 };
 
 use core::pos::BiPos as Position;
-use notices::{
-    NoticeLevel,
-};
+use notices::NoticeLevel;
 
 type IRError = Result<(), ()>;
 
@@ -28,7 +26,7 @@ pub fn module<'a>(p: &mut Parser<'a>) -> IRError {
     );
     while !p.check(TokenType::Eof) {
         if let Err(()) = declaration_or_statement(p) {
-            return Err(())
+            return Err(());
         }
         p.advance().unwrap();
     }
@@ -50,25 +48,96 @@ pub(crate) fn declaration<'a>(p: &mut Parser<'a>) -> IRError {
 pub(crate) fn statement<'a>(p: &mut Parser<'a>) -> IRError {
     let token = p.current_token();
     match token.type_ {
-        TokenType::KwVal => property_val(p)?,
-        TokenType::KwVar => property_var(p)?,
-        TokenType::KwLet => local_var(p)?,
+        TokenType::KwVal => property(p)?,
+        TokenType::KwVar => property(p)?,
+        TokenType::KwFun => function(p)?,
+        TokenType::KwLet => function(p)?,
         _ => {
-            p.emit_notice(token.pos, NoticeLevel::Error, format!("Unexpected token found: {:?}", token).to_string());
-            return Err(())
+            p.emit_notice(
+                token.pos,
+                NoticeLevel::Error,
+                format!("Unexpected token found: {:?}", token).to_string(),
+            );
+            return Err(());
         }
     }
     Ok(())
 }
 
-pub(crate) fn property_val<'a>(p: &mut Parser<'a>) -> IRError {
+pub(crate) fn property<'a>(p: &mut Parser<'a>) -> IRError {
     let lpos = p.current_token().pos;
-    if !p.check_consume(
-        TokenType::KwVal
-    )
-    {
+    let mutable = if !p.check(TokenType::KwVal) {
+        if !p.check(TokenType::KwVar){
+            let message = format!(
+                "Expected a val or var keyword token, but instead got {}",
+                p.current_token()
+            );
+            p.emit_notice(lpos, NoticeLevel::Error, message);
+            return Err(());
+        }
+        true
+    }else{
+        false
+    };
+    p.advance().unwrap();
+    if !p.check(TokenType::Identifier) {
         let message = format!(
-            "Expected a val keyword token, but instead got {}",
+            "Expected an identifier token, but instead got {}",
+            p.current_token()
+        );
+        p.emit_notice(lpos, NoticeLevel::Error, message);
+        return Err(());
+    }
+    let name = match p.current_token().data {
+        TokenData::Str(s) => (*s).to_string(),
+        _ => {
+            p.emit_notice(
+                lpos,
+                NoticeLevel::Error,
+                "Failed to extract string data from identifier token.".to_string(),
+            );
+            return Err(());
+        }
+    };
+    let signature = if p.check_consume(TokenType::Colon) {
+        type_(p).expect("Could not create type signature for value property.")
+    } else {
+        p.advance()
+            .expect("Failed to advance parser to next token.");
+        TypeSignature::Untyped
+    };
+
+    if !p.check_consume(TokenType::Equal) {
+        p.emit_notice(
+            lpos,
+            NoticeLevel::Error,
+            "Value property must be initialized.".to_string(),
+        );
+        let found_token = p.current_token();
+        let data = match &found_token.data {
+            TokenData::Float(f) => f.to_string(),
+            TokenData::Integer(i) => i.to_string(),
+            TokenData::Str(s) => (*s).to_string(),
+            TokenData::String(s) => s.clone(),
+            _ => "Unknown".to_string(),
+        };
+        p.emit_notice(
+            found_token.pos,
+            NoticeLevel::Error,
+            format!("Expected '=' but instead got {:?}", data),
+        );
+        return Err(());
+    }
+    p.emit_ir(lpos, signature, Instruction::Property(name, mutable));
+    expression(p).expect("Could not parse expression.");
+    Ok(())
+}
+
+pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
+    let lpos = p.current_token().pos;
+    if !p.check_consume(TokenType::KwFun) {
+        let message = format!(
+            "Expected a fun keyword token, but instead got {}",
             p.current_token()
         );
         p.emit_notice(lpos, NoticeLevel::Error, message);
@@ -85,67 +154,137 @@ pub(crate) fn property_val<'a>(p: &mut Parser<'a>) -> IRError {
     let name = match p.current_token().data {
         TokenData::Str(s) => (*s).to_string(),
         _ => {
-            p.emit_notice(lpos, NoticeLevel::Error, "Failed to extract string data from identifier token.".to_string());
-            return Err(())
-        },
+            p.emit_notice(
+                lpos,
+                NoticeLevel::Error,
+                "Failed to extract string data from identifier token.".to_string(),
+            );
+            return Err(());
+        }
     };
-    let (signature, is_untyped) = if p.check_consume(TokenType::Colon) {
-        (
-            type_(p).expect("Could not create type signature for value property."),
-            false,
-        )
-    } else {
-        p.advance()
-            .expect("Failed to advance parser to next token.");
-        (TypeSignature::Untyped, false)
-    };
-
-    if !p.check_consume(TokenType::Equal) {
-        p.emit_notice(lpos, NoticeLevel::Error, "Value property must be initialized.".to_string());
-        let found_token = match &p.current_token().data{
-            TokenData::Float(f) => f.to_string(),
-            TokenData::Integer(i) => i.to_string(),
-            TokenData::Str(s) => (*s).to_string(),
-            TokenData::String(s) => s.clone(),
-            &_ => "Unknown".to_string()
-        };
-        p.emit_notice(lpos, NoticeLevel::Error, format!("Expected '=' but instead got {:?}", found_token));
-        return Err(());
+    if p.advance().is_err(){
+        return Err(())
     }
-    p.emit_ir(lpos, signature, Instruction::Property(name, false));
-    expression(p).expect("Could not parse expression.");
+    let mut params = Vec::<NamedTypeSignature>::new();
+    if p.check(TokenType::LParen){
+        
+        loop{
+            if p.check(TokenType::RParen){
+                break;
+            }
+            let param_name = match p.consume(TokenType::Identifier).unwrap() {
+                TokenData::Str(s) => (*s).to_string(),
+                _ => {
+                    p.emit_notice(
+                        lpos,
+                        NoticeLevel::Error,
+                        "Failed to extract string data from identifier token.".to_string(),
+                    );
+                    return Err(());
+                }
+            };
+            let _ = p.consume(TokenType::Colon);
+            let param_typename = match p.consume(TokenType::Identifier).unwrap() {
+                TokenData::Str(s) => (*s).to_string(),
+                _ => {
+                    p.emit_notice(
+                        lpos,
+                        NoticeLevel::Error,
+                        "Failed to extract string data from identifier token.".to_string(),
+                    );
+                    return Err(());
+                }
+            };
+            params.push(ir::type_signature::NamedTypeSignature(
+                param_name,
+                ir::type_signature::TypeSignature::Primitive(PrimitiveType::new(param_typename.as_str()))
+            ));
+            p.advance().unwrap();
+        }
+    }
+    let typename = if p.next_token().type_ == TokenType::Colon{
+        match p.consume(TokenType::Identifier).unwrap() {
+            TokenData::Str(s) => (*s).to_string(),
+            _ => {
+                p.emit_notice(
+                    lpos,
+                    NoticeLevel::Error,
+                    "Failed to extract string data from identifier token.".to_string(),
+                );
+                return Err(());
+            }
+        }
+    }else{
+        "Unit".to_string()
+    };
+    let function_sig = ir::type_signature::TypeSignature::Function(ir::type_signature::FunctionSignature{
+        parameters: params,
+        return_type_signature: Box::new(TypeSignature::Primitive(PrimitiveType::new(typename.as_str())))
+    });
+    p.emit_ir(lpos, function_sig, ir::hir::Instruction::Fn(name));
+    if p.consume(TokenType::LCurly).is_err(){
+        return Err(())
+    }
+
+    p.context = ParseContext::Local;
+    
+    while !p.check_consume(TokenType::RCurly){
+        if p.advance().is_err(){
+            return Err(())
+        }
+        if local_statements(p).is_err(){
+            return Err(())
+        }
+    }
+
     Ok(())
 }
 
-pub(crate) fn property_var<'a>(p: &mut Parser<'a>) -> IRError {
-    let was_error = p
-        .consume(
-            TokenType::KwVar,
-            "Expected keyword 'var' for defining an mutable property.",
-        )
-        .is_err();
-    Ok(())
+pub(crate) fn local_statements<'a>(p: &mut Parser<'a>) -> IRError{
+    match p.current_token().type_{
+        TokenType::KwLet => local_var(p),
+        TokenType::Identifier => {
+            match p.next_token().type_{
+                TokenType::Equal => unimplemented!(),
+                _ => unimplemented!()
+            }
+        },
+        _ => statement(p)
+    }
 }
 
 pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
-    if !p.check_consume(TokenType::KwLet){
+    if p.context != ParseContext::Local{
+        p.emit_notice(p.current_token().pos, NoticeLevel::Error, "Found 'let' outside of local context.".to_string());
+        return Err(())
+    }
+    if !p.check_consume(TokenType::KwLet) {
         p.emit_notice(
-            p.current_token().pos, 
-            NoticeLevel::Error, 
-            "Expected keyword 'let' for defining an immutable local variable.".to_string());
+            p.current_token().pos,
+            NoticeLevel::Error,
+            "Expected keyword 'let' for defining an local variable.".to_string(),
+        );
     }
     let token = p.prev_token();
     let pos = token.pos;
-    let name = if p.current_token().type_ != TokenType::Identifier{
-        p.emit_notice(pos, NoticeLevel::Error, "Expected an identifier for value property".to_string());
-        return Err(())
-    }else {
-        match &token.data{
+    let name = if p.current_token().type_ != TokenType::Identifier {
+        p.emit_notice(
+            pos,
+            NoticeLevel::Error,
+            "Expected an identifier for local variable".to_string(),
+        );
+        return Err(());
+    } else {
+        match &token.data {
             TokenData::Str(s) => (*s).to_string(),
             _ => {
-                p.emit_notice(pos, NoticeLevel::Error, "Failed to extract string data from identifier token.".to_string());
-                return Err(()) 
-            },
+                p.emit_notice(
+                    pos,
+                    NoticeLevel::Error,
+                    "Failed to extract string data from identifier token.".to_string(),
+                );
+                return Err(());
+            }
         }
     };
     let (signature, is_untyped) = if p.check_consume(TokenType::Colon) {
@@ -158,14 +297,21 @@ pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
     };
     p.emit_ir(pos, signature, Instruction::LocalVar(name.clone(), false));
 
-    match p.consume(TokenType::Equal, "Expected an EQUAL token.") {
-        Ok(t) => {
+    match p.consume(TokenType::Equal) {
+        Ok(_) => {
             p.advance().unwrap();
             if expression(p).is_err() {
-                p.emit_notice(pos, NoticeLevel::Error, format!("Local variable {} cannot go uninitialized.", name));
+                p.emit_notice(
+                    pos,
+                    NoticeLevel::Error,
+                    format!("Local variable {} cannot go uninitialized.", name),
+                );
             }
-        },
-        Err(()) => return Err(())
+            if p.advance().is_err(){
+                return Err(())
+            }
+        }
+        Err(()) => return Err(()),
     }
     Ok(())
 }
@@ -177,7 +323,11 @@ fn expression<'a>(p: &mut Parser<'a>) -> IRError {
         .expect(format!("Could not find parse rule for current token: {:?}", token).as_str());
     let infix = rule.infix;
     if infix as usize == nil_func as usize {
-        p.emit_notice(token.pos, NoticeLevel::Error, "Expected an infix function, but instead got nil_func".to_string());
+        p.emit_notice(
+            token.pos,
+            NoticeLevel::Error,
+            "Expected an infix function, but instead got nil_func".to_string(),
+        );
         return Err(());
     }
     infix(p).unwrap();
@@ -200,11 +350,15 @@ pub(crate) fn literal<'a>(p: &mut Parser<'a>) -> IRError {
                 );
             }
             _ => {
-                p.emit_notice(pos, NoticeLevel::Error, format!(
-                    "Expected integer token data, but instead found {:?}",
-                    current_token.data
-                ));
-                return Err(())
+                p.emit_notice(
+                    pos,
+                    NoticeLevel::Error,
+                    format!(
+                        "Expected integer token data, but instead found {:?}",
+                        current_token.data
+                    ),
+                );
+                return Err(());
             }
         },
         TokenType::String => match token_data {

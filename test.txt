@@ -1,2 +1,5 @@
-val hello - 5643
-let sup = "m8wut"
+var hello = 5643
+
+fun testFunc(test: String) {
+    let sup = "m8wut"
+}

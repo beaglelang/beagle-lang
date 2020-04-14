@@ -21,8 +21,8 @@ lazy_static! {
 
 pub struct Lexer<'a> {
     input: &'a str,
-    chars: std::str::CharIndices<'a>,
-    current_char: Option<(usize, char)>,
+    source: Option<&'a str>,
+    char_idx: usize,
     current_pos: BiPos,
 
     pub token_sender: Arc<Mutex<mpsc::Sender<tokens::LexerToken<'a>>>>,
@@ -33,49 +33,71 @@ impl<'a> Lexer<'a> {
         input: &'a str,
         token_tx: mpsc::Sender<tokens::LexerToken<'a>>,
     ) -> Result<Box<Lexer<'a>>> {
-        let mut chars = input.char_indices();
-        let current_char = chars.next();
         let lexer = Box::new(Lexer {
             input,
-            chars,
-            current_char,
+            source: Some(input),
+            char_idx: 0,
             current_pos: BiPos::default(),
             token_sender: Arc::new(Mutex::new(token_tx)),
         });
         Ok(lexer)
     }
 
-    fn advance_end(&mut self) -> Option<(usize, char)> {
-        let prev_char = self.current_char;
-        self.current_char = self.chars.next();
-        // println!("advance_end: prev_char {:?}", prev_char);
-        // println!("advance_end: current_char {:?}", self.current_char);
-        match self.current_char {
-            Some((_, c)) if c.is_whitespace() => {
-                self.current_pos.next_col_end();
-                if c == '\n' || c == '\r' {
-                    return self.current_char;
+    fn advance_end(&mut self) -> Option<char> {
+        match self.source{
+            Some(src) => {
+                let mut chars = src.chars();
+                let new_c = chars.next();
+                self.char_idx += 1;
+                self.source = Some(chars.as_str());
+                match new_c {
+                    Some(c) if c.is_whitespace() => {
+                        self.current_pos.next_col_end();
+                        if c == '\n' || c == '\r' {
+                            return new_c;
+                        }
+                    }
+                    Some(_) => {
+                        self.current_pos.next_col_end();
+                    }
+                    _ => return new_c,
                 }
-            }
-            Some(_) => {
-                self.current_pos.next_col_end();
-            }
-            _ => return prev_char,
+                new_c
+            },
+            None => None
         }
-        self.current_char
     }
 
-    fn advance(&mut self) -> Option<(usize, char)> {
-        let prev_char = self.current_char;
-        self.current_char = self.chars.next();
-        // println!("advance: current_char {:?}", self.current_char);
-        match self.current_char {
-            Some(_) => {
-                self.current_pos.next_col();
-            }
-            _ => return prev_char,
+    fn peek(&mut self) -> Option<char>{
+        match self.source{
+            Some(src) => src.chars().next(),
+            None => None
         }
-        self.current_char
+    }
+
+    fn advance(&mut self) -> Option<char> {
+        match self.source{
+            Some(src) => {
+                let mut chars = src.chars();
+                let new_c = chars.next();
+                self.char_idx += 1;
+                self.source = Some(chars.as_str());
+                match new_c {
+                    Some(c) if c.is_whitespace() => {
+                        self.current_pos.next_col();
+                        if c == '\n' || c == '\r' {
+                            return new_c;
+                        }
+                    }
+                    Some(_) => {
+                        self.current_pos.next_col();
+                    }
+                    _ => return new_c,
+                }
+                new_c
+            },
+            None => None,
+        }
     }
 
     fn is_delimiter(&self, c: char) -> Option<tokens::TokenType> {
@@ -123,9 +145,9 @@ impl<'a> Lexer<'a> {
     }
 
     fn number(&mut self) -> Option<tokens::LexerToken<'a>> {
-        let start_idx = self.current_char?.0;
+        let start_idx = self.char_idx;
         let mut is_float = false;
-        while let Some((_, c)) = self.current_char {
+        while let Some(c) = self.peek() {
             if c == '.' {
                 is_float = true;
                 self.advance_end();
@@ -135,7 +157,7 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
-        let slice = match self.input.get(start_idx - 1..self.current_char?.0) {
+        let slice = match self.input.get(start_idx - 1..self.char_idx) {
             Some(s) => s,
             None => {
                 return Some(tokens::LexerToken {
@@ -185,18 +207,17 @@ impl<'a> Lexer<'a> {
 
     #[inline]
     fn string(&mut self) -> Option<tokens::LexerToken<'a>> {
-        let start_idx = self.current_char?.0;
+        let start_idx = self.char_idx;
         self.advance().unwrap();
-        while let Some((_, c)) = self.advance_end() {
+        while let Some(c) = self.advance_end() {
             if c != '\"' {
-                self.advance_end()
-                    .expect("Failed to advance the end position.");
+                continue;
             } else {
                 break;
             }
         }
 
-        let slice = match self.input.get(start_idx + 1..self.current_char?.0) {
+        let slice = match self.input.get(start_idx + 1..self.char_idx-1) {
             Some(s) => s,
             None => {
                 return Some(tokens::LexerToken {
@@ -214,67 +235,83 @@ impl<'a> Lexer<'a> {
         })
     }
 
-    fn get_token(&mut self) -> Option<tokens::LexerToken<'a>> {
-        let (i, c) = match self.current_char {
-            Some(ic) => ic,
-            _ => return Some(tokens::LexerToken::default()),
-        };
+    fn skip_whitespace(&mut self){
+        while match self.peek(){
+            Some(c) if c == '\n' => {
+                self.current_pos.next_line();
+                true
+            }
+            Some(c) if c.is_whitespace() => true,
+            _ => false
+        }{
+            self.advance();
+        }
+        self.current_pos.start = self.current_pos.end;
+    }
 
-        match c {
-            c if c.is_whitespace() || c.is_control() => {
-                if c == '\n' {
-                    self.current_pos.next_line();
-                }
-                return None;
-            }
-            c if c.is_alphabetic() => {
-                let start = i;
-                let end = loop {
-                    match self.advance_end() {
-                        Some((i, c)) if !c.is_alphanumeric() => break i,
-                        Some(_) => continue,
-                        None => break self.input.len(),
-                    }
-                };
-                let identifier = &self.input[start..end];
-                let type_ = self.is_keyword(identifier);
-                return Some(tokens::LexerToken {
-                    type_,
-                    data: tokens::TokenData::Str(identifier),
-                    pos: self.current_pos,
-                });
-            }
-            '\"' => {
-                return match self.string() {
-                    Some(t) => Some(t),
-                    None => {
+    fn get_token(&mut self) -> Option<tokens::LexerToken<'a>> {
+        self.skip_whitespace();
+        match self.advance() {
+            Some(c) => {
+                match c {
+                    c if c.is_alphabetic() => {
+                        let start = self.char_idx;
+                        let end = loop {
+                            match self.peek() {
+                                Some(c) if self.is_delimiter(c).is_some() || c.is_whitespace() => break self.char_idx,
+                                Some(_) =>{
+                                    self.advance_end();
+                                    continue
+                                },
+                                None => break self.input.len(),
+                            }
+                        };
+                        let identifier = &self.input[start-1..end];
+                        let type_ = self.is_keyword(identifier);
                         return Some(tokens::LexerToken {
-                            data: tokens::TokenData::String(format!(
-                                "Unable to get string from input @ {:?}",
-                                self.current_pos
-                            )),
+                            type_,
+                            data: tokens::TokenData::Str(identifier),
+                            pos: self.current_pos,
+                        });
+                    }
+                    '\"' => {
+                        return match self.string() {
+                            Some(t) => Some(t),
+                            None => {
+                                return Some(tokens::LexerToken {
+                                    data: tokens::TokenData::String(format!(
+                                        "Unable to get string from input @ {:?}",
+                                        self.current_pos
+                                    )),
+                                    type_: tokens::TokenType::Err,
+                                    pos: self.current_pos,
+                                })
+                            }
+                        }
+                    }
+                    c if c.is_digit(10) => return self.number(),
+                    c if self.is_delimiter(c).is_some() => {
+                        return Some(tokens::LexerToken {
+                            data: tokens::TokenData::String(c.to_string()),
+                            type_: self.is_delimiter(c).unwrap(),
+                            pos: self.current_pos,
+                        });
+                    }
+                    _ => {
+                        return Some(tokens::LexerToken {
                             type_: tokens::TokenType::Err,
+                            data: tokens::TokenData::Str("Invalid character"),
                             pos: self.current_pos,
                         })
                     }
                 }
-            }
-            c if c.is_digit(10) => return self.number(),
-            c if self.is_delimiter(c).is_some() => {
-                return Some(tokens::LexerToken {
-                    data: tokens::TokenData::String(c.to_string()),
-                    type_: self.is_delimiter(c).unwrap(),
-                    pos: self.current_pos,
-                });
-            }
-            _ => {
-                return Some(tokens::LexerToken {
-                    type_: tokens::TokenType::Err,
-                    data: tokens::TokenData::Str("Invalid character"),
-                    pos: self.current_pos,
-                })
-            }
-        };
+            },
+            None => Some(tokens::LexerToken{
+                type_: tokens::TokenType::Eof, 
+                data: tokens::TokenData::None, 
+                pos: self.current_pos
+            })
+        }
     }
 
     pub async fn start_tokenizing(&mut self) -> std::result::Result<(), String> {
@@ -300,7 +337,7 @@ impl<'a> Lexer<'a> {
                             )
                             .to_string())
                         }
-                        _ => self.advance(),
+                        _ => continue,
                     };
                 }
                 None => {

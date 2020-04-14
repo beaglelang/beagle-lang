@@ -1,7 +1,7 @@
-use core::{ansi, pos::{
-    Position,
-    BiPos
-}};
+use core::{
+    ansi,
+    pos::{BiPos, Position},
+};
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone, Copy, Eq)]
@@ -27,7 +27,7 @@ impl Notice {
             NoticeLevel::Notice => (ansi::Fg::Cyan, "[-]: "),
             NoticeLevel::Warning => (ansi::Fg::Yellow, "[*]: "),
             NoticeLevel::Error => (ansi::Fg::Red, "[!]: "),
-            NoticeLevel::Halt => return
+            NoticeLevel::Halt => return,
         };
 
         println!(
@@ -41,10 +41,10 @@ impl Notice {
 
         println!("\tat [{}:{}]\n", self.file, self.pos);
 
-        if self.pos.start != Position::default() && self.pos.end != Position::default(){
-            if let Some(src) = source{
-                if let Some((start_line, lines, squiggly)) = self.pos.locate_in_source(src){
-                    lines.iter().enumerate().for_each(|(i, line)|{
+        if self.pos.start != Position::default() && self.pos.end != Position::default() {
+            if let Some(src) = source {
+                if let Some((start_line, lines, squiggly)) = self.pos.locate_in_source(src) {
+                    lines.iter().enumerate().for_each(|(i, line)| {
                         println!(
                             "\t{}{:4}{} | {}",
                             colour,
@@ -53,11 +53,11 @@ impl Notice {
                             line
                         );
 
-                        if i == if self.pos.start.0 > 3{
+                        if i == if self.pos.start.0 > 3 {
                             3
-                        }else{
+                        } else {
                             self.pos.start.0 as usize - 1
-                        }{
+                        } {
                             println!("\t{}---- | {}{}", colour, squiggly, ansi::Fg::Reset);
                         };
                     });
