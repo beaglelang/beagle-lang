@@ -12,6 +12,7 @@ use parser::Parser;
 use std::sync::mpsc::channel;
 
 use notices::{Notice, NoticeLevel};
+use typeck::TypeckVM;
 
 pub struct Driver;
 
@@ -23,9 +24,10 @@ impl Driver {
         let (token_tx, token_rx) = channel::<tokens::LexerToken>();
         let (ir_tx, ir_rx) = channel::<Option<ChannelIr>>();
         let (notice_tx, notice_rx) = channel::<Option<Notice>>();
+        let (typeck_tx, typeck_rx) = channel::<Option<ChannelIr>>();
 
         let mut lexer = lexer::Lexer::new(instr.as_str(), token_tx.clone()).unwrap();
-        let parser_task = Parser::parse(name.clone(), ir_tx, token_rx, notice_tx);
+        let parser_task = Parser::parse(name.clone(), ir_tx, token_rx, notice_tx.clone());
         let mut tir = ir::hir::Module::new(name.clone());
 
         let lexer_task = lexer.start_tokenizing();
@@ -54,11 +56,17 @@ impl Driver {
         let ir_task = async {
             while let Ok(Some(ir)) = ir_rx.recv() {
                 match ir.ins {
-                    ir::hir::Instruction::Halt => break,
+                    ir::hir::Instruction::Halt => {
+                        tir.push(ir.pos, ir.sig, ir.ins);
+                        break
+                    },
                     _ => tir.push(ir.pos, ir.sig, ir.ins),
                 };
             }
         };
+        // let typeck_task = TypeckVM::start_checking(ir_rx, notice_tx.clone());
+        // let (lexer_result, parser_result, _, _) =
+        //     futures::join!(lexer_task, parser_task, notice_task, typeck_task);
         let (lexer_result, parser_result, _, _) =
             futures::join!(lexer_task, parser_task, notice_task, ir_task);
 

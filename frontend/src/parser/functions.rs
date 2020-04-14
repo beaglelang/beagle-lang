@@ -30,18 +30,18 @@ pub fn module<'a>(p: &mut Parser<'a>) -> IRError {
         }
         p.advance().unwrap();
     }
-    p.emit_ir(Position::default(), TypeSignature::None, Instruction::Halt);
+    p.emit_ir(Position::default(), TypeSignature::None, Instruction::EndModule);
     Ok(())
 }
 
 pub(crate) fn declaration_or_statement<'a>(p: &mut Parser<'a>) -> IRError {
     match p.current_token().type_ {
-        TokenType::KwMod => declaration(p),
+        TokenType::KwMod => mod_declaration(p),
         _ => statement(p),
     }
 }
 
-pub(crate) fn declaration<'a>(p: &mut Parser<'a>) -> IRError {
+pub(crate) fn mod_declaration<'a>(p: &mut Parser<'a>) -> IRError {
     Ok(())
 }
 
@@ -99,8 +99,13 @@ pub(crate) fn property<'a>(p: &mut Parser<'a>) -> IRError {
             return Err(());
         }
     };
-    let signature = if p.check_consume(TokenType::Colon) {
-        type_(p).expect("Could not create type signature for value property.")
+    let signature = if p.consume(TokenType::Colon).is_ok() {
+        if let Ok(t) = type_(p){
+            t
+        }else{
+            p.emit_notice(p.prev_token().pos, NoticeLevel::Error, "Could not create type signature for property.".to_string());
+            return Err(())
+        }
     } else {
         p.advance()
             .expect("Failed to advance parser to next token.");
@@ -244,6 +249,7 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
             return Err(())
         }
     }
+    p.emit_ir(lpos, TypeSignature::None, ir::hir::Instruction::EndFn);
 
     Ok(())
 }
@@ -273,53 +279,71 @@ pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
             "Expected keyword 'let' for defining an local variable.".to_string(),
         );
     }
-    let token = p.current_token();
-    let pos = token.pos;
-    let name = if p.current_token().type_ != TokenType::Identifier {
-        p.emit_notice(
-            pos,
-            NoticeLevel::Error,
-            "Expected an identifier for local variable".to_string(),
+    let pos = p.current_token().pos;
+    if !p.check(TokenType::Identifier) {
+        let message = format!(
+            "Expected an identifier token, but instead got {}",
+            p.current_token()
         );
+        p.emit_notice(pos, NoticeLevel::Error, message);
         return Err(());
-    } else {
-        match &token.data {
-            TokenData::Str(s) => (*s).to_string(),
-            _ => {
-                p.emit_notice(
-                    pos,
-                    NoticeLevel::Error,
-                    "Failed to extract string data from identifier token.".to_string(),
-                );
-                return Err(());
-            }
+    }
+    let name = match p.current_token().data {
+        TokenData::Str(s) => (*s).to_string(),
+        _ => {
+            p.emit_notice(
+                pos,
+                NoticeLevel::Error,
+                "Failed to extract string data from identifier token.".to_string(),
+            );
+            return Err(());
         }
     };
-    let (signature, is_untyped) = if p.check_consume(TokenType::Colon) {
-        (
-            type_(p).expect("Could not create type signature for local variable."),
-            false,
-        )
+    let signature = if p.consume(TokenType::Colon).is_ok() {
+        if let Ok(t) = type_(p){
+            t
+        }else{
+            p.emit_notice(p.current_token().pos, NoticeLevel::Error, "Could not create type signature for local variable.".to_string());
+            return Err(())
+        }
     } else {
-        (TypeSignature::Untyped, false)
+        p.advance()
+            .expect("Failed to advance parser to next token.");
+        TypeSignature::Untyped
     };
     p.emit_ir(pos, signature, Instruction::LocalVar(name.clone(), false));
 
-    match p.consume(TokenType::Equal) {
-        Ok(_) => {
-            p.advance().unwrap();
-            if expression(p).is_err() {
-                p.emit_notice(
-                    pos,
-                    NoticeLevel::Error,
-                    format!("Local variable {} cannot go uninitialized.", name),
-                );
-            }
-            if p.advance().is_err(){
-                return Err(())
-            }
-        }
-        Err(()) => return Err(()),
+    if !p.check_consume(TokenType::Equal) {
+        p.emit_notice(
+            pos,
+            NoticeLevel::Error,
+            "Local property must be initialized.".to_string(),
+        );
+        let found_token = p.current_token();
+        let data = match &found_token.data {
+            TokenData::Float(f) => f.to_string(),
+            TokenData::Integer(i) => i.to_string(),
+            TokenData::Str(s) => (*s).to_string(),
+            TokenData::String(s) => s.clone(),
+            _ => "Unknown".to_string(),
+        };
+        p.emit_notice(
+            found_token.pos,
+            NoticeLevel::Error,
+            format!("Expected '=' but instead got {:?}", data),
+        );
+        return Err(());
+    }
+
+    if expression(p).is_err() {
+        p.emit_notice(
+            pos,
+            NoticeLevel::Error,
+            format!("Local variable {} cannot go uninitialized.", name),
+        );
+    }
+    if p.advance().is_err(){
+        return Err(())
     }
     Ok(())
 }
@@ -383,6 +407,10 @@ pub(crate) fn literal<'a>(p: &mut Parser<'a>) -> IRError {
 }
 
 fn type_<'a>(p: &mut Parser<'a>) -> Result<TypeSignature, ()> {
+    if p.advance().is_err(){
+        p.emit_notice(p.current_token().pos, NoticeLevel::Error, "Could not advance parser.".to_string());
+        return Err(())
+    }
     let current_token = &p.current_token();
     let ret = match (&current_token.type_, &current_token.data) {
         (TokenType::Identifier, TokenData::Str(s)) => {

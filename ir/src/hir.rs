@@ -43,12 +43,14 @@ pub struct ChannelIr {
     pub ins: Instruction,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Instruction {
     //The module being parsed, which needs a name.
     Module(String),
+    EndModule,
     //The start of a function. The name of the function is expected to follow.
     Fn(String),
+    EndFn,
     //The start of a param. The name and type of the param must follow.
     FnParam(String),
     //The return type of the function
@@ -96,17 +98,26 @@ impl Display for Module {
             match ins{
                 Halt => {
                     fmt_tab(f, depth)?;
-                    writeln!(f, "{}HALT{}", ansi::Fg::BrightRed, ansi::Fg::Reset);
+                    writeln!(f, "{}HALT{}", ansi::Fg::BrightRed, ansi::Fg::Reset)?;
                 },
                 Module(mname) => {
                     fmt_tab(f, depth)?;
                     depth += 1;
                     writeln!(
                         f,
-                        "{}mod{} {}{}",
-                        ansi::Fg::Cyan,
+                        "{}Module{} {}{}",
+                        ansi::Fg::Blue,
                         ansi::Fg::Yellow,
                         mname,
+                        ansi::Fg::Reset
+                    )?;
+                },
+                EndModule => {
+                    depth -= 1;
+                    writeln!(
+                        f,
+                        "{}EndMod{}",
+                        ansi::Fg::Blue,
                         ansi::Fg::Reset
                     )?;
                 }
@@ -115,7 +126,7 @@ impl Display for Module {
                     depth += 1;
                     writeln!(
                         f,
-                        "{}function{} {}{}{}",
+                        "{}Function{} {}{}{}",
                         ansi::Fg::Cyan,
                         ansi::Fg::Red,
                         name,
@@ -123,6 +134,16 @@ impl Display for Module {
                         ansi::Fg::Reset
                     )?;
                 },
+                EndFn => {
+                    depth -= 1;
+                    fmt_tab(f, depth)?;
+                    writeln!(
+                        f,
+                        "{}EndFun{}",
+                        ansi::Fg::Cyan,
+                        ansi::Fg::Reset
+                    )?;
+                }
                 FnParam(name) => {
                     fmt_tab(f, depth)?;
                     writeln!(
@@ -199,7 +220,7 @@ impl Display for Module {
                     fmt_tab(f, depth)?;
                     writeln!(
                         f,
-                        "{}String {}{}{}",
+                        "{}String {}\"{}\"{}",
                         ansi::Fg::Cyan,
                         ansi::Fg::Green,
                         i,
