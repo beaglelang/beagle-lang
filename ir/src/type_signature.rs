@@ -62,12 +62,9 @@ impl PrimitiveType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionSignature{
-    pub parameters: Vec<NamedTypeSignature>,
+    pub parameters: Vec<TypeSignature>,
     pub return_type_signature: Box<TypeSignature>,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NamedTypeSignature(pub String, pub TypeSignature);
 
 use std::fmt::{
     Display,
@@ -88,17 +85,15 @@ impl Display for PrimitiveType {
     }
 }
 
-impl Display for NamedTypeSignature {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}: {}", self.0, self.1)
-    }
-}
-
 impl Display for FunctionSignature {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "fn ( ")?;
-        for parameter in &self.parameters {
-            write!(f, "{}, ", parameter)?;
+        write!(f, "(")?;
+        for (i, parameter) in self.parameters.iter().enumerate() {
+            if i >= self.parameters.len() - 1{
+                write!(f, "{}", parameter)?;
+            }else{
+                write!(f, "{}, ", parameter)?;
+            }
         }
         write!(f, ") -> {}", self.return_type_signature)
     }

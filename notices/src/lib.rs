@@ -68,7 +68,7 @@ impl Notice {
     }
 }
 
-const TAB_WIDTH: usize = 5;
+pub const TAB_WIDTH: usize = 5;
 
 pub trait SourceOrigin {
     fn locate_in_source(self, source: &str) -> Option<(usize, Vec<&str>, String)>;

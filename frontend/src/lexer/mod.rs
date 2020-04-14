@@ -217,7 +217,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let slice = match self.input.get(start_idx + 1..self.char_idx-1) {
+        let slice = match self.input.get(start_idx..self.char_idx-1) {
             Some(s) => s,
             None => {
                 return Some(tokens::LexerToken {

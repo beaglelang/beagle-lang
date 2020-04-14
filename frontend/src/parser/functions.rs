@@ -6,7 +6,7 @@ use crate::{
 
 use ir::{
     hir::Instruction,
-    type_signature::{PrimitiveType, TypeSignature, NamedTypeSignature},
+    type_signature::{PrimitiveType, TypeSignature},
 };
 
 use core::pos::BiPos as Position;
@@ -165,13 +165,15 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
     if p.advance().is_err(){
         return Err(())
     }
-    let mut params = Vec::<NamedTypeSignature>::new();
+    let mut params = Vec::<TypeSignature>::new();
+    let mut param_ir = Vec::<ir::hir::ChannelIr>::new();
     if p.check(TokenType::LParen){
         
         loop{
             if p.check(TokenType::RParen){
                 break;
             }
+            let loc = p.next_token().pos;
             let param_name = match p.consume(TokenType::Identifier).unwrap() {
                 TokenData::Str(s) => (*s).to_string(),
                 _ => {
@@ -195,10 +197,13 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
                     return Err(());
                 }
             };
-            params.push(ir::type_signature::NamedTypeSignature(
-                param_name,
-                ir::type_signature::TypeSignature::Primitive(PrimitiveType::new(param_typename.as_str()))
-            ));
+            let type_sig = ir::type_signature::TypeSignature::Primitive(PrimitiveType::new(param_typename.as_str()));
+            params.push(type_sig.clone());
+            param_ir.push(ir::hir::ChannelIr{
+                pos: loc,
+                sig: type_sig,
+                ins: Instruction::FnParam(param_name)
+            });
             p.advance().unwrap();
         }
     }
@@ -222,6 +227,9 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
         return_type_signature: Box::new(TypeSignature::Primitive(PrimitiveType::new(typename.as_str())))
     });
     p.emit_ir(lpos, function_sig, ir::hir::Instruction::Fn(name));
+    for ir in param_ir{
+        p.emit_ir(ir.pos, ir.sig, ir.ins);
+    }
     if p.consume(TokenType::LCurly).is_err(){
         return Err(())
     }
@@ -265,7 +273,7 @@ pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
             "Expected keyword 'let' for defining an local variable.".to_string(),
         );
     }
-    let token = p.prev_token();
+    let token = p.current_token();
     let pos = token.pos;
     let name = if p.current_token().type_ != TokenType::Identifier {
         p.emit_notice(

@@ -50,7 +50,7 @@ pub enum Instruction {
     //The start of a function. The name of the function is expected to follow.
     Fn(String),
     //The start of a param. The name and type of the param must follow.
-    FnParam(String, String),
+    FnParam(String),
     //The return type of the function
     FnType(String),
     //A property which must be given a name and whether it is mutable or not. An expression must follow.
@@ -63,4 +63,160 @@ pub enum Instruction {
     Bool(bool),
     String(String),
     Halt,
+}
+
+use std::fmt::{
+    Display,
+    Formatter,
+    Result
+};
+
+fn repeat_char(c: char, times: usize) -> String{
+    std::iter::repeat(c).take(times).collect::<String>()
+}
+
+fn fmt_tab(f: &mut Formatter<'_>, depth: usize) -> Result{
+    if depth != 0{
+        for _ in 0 .. depth{
+            write!(f, "|{}", repeat_char(' ', super::TAB_WIDTH))?;
+        }
+        Ok(())
+    }else{
+        Ok(())
+    }
+}
+
+use core::ansi;
+
+impl Display for Module {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        use Instruction::*;
+        let mut depth = 0;
+        for (ins, sig) in self.instructions.iter().zip(self.signatures.iter()){
+            match ins{
+                Halt => {
+                    fmt_tab(f, depth)?;
+                    writeln!(f, "{}HALT{}", ansi::Fg::BrightRed, ansi::Fg::Reset);
+                },
+                Module(mname) => {
+                    fmt_tab(f, depth)?;
+                    depth += 1;
+                    writeln!(
+                        f,
+                        "{}mod{} {}{}",
+                        ansi::Fg::Cyan,
+                        ansi::Fg::Yellow,
+                        mname,
+                        ansi::Fg::Reset
+                    )?;
+                }
+                Fn(name) => {
+                    fmt_tab(f, depth)?;
+                    depth += 1;
+                    writeln!(
+                        f,
+                        "{}function{} {}{}{}",
+                        ansi::Fg::Cyan,
+                        ansi::Fg::Red,
+                        name,
+                        sig,
+                        ansi::Fg::Reset
+                    )?;
+                },
+                FnParam(name) => {
+                    fmt_tab(f, depth)?;
+                    writeln!(
+                        f,
+                        "{}Parameter{} {}: {}{}{}",
+                        ansi::Fg::Cyan,
+                        ansi::Fg::White,
+                        name,
+                        ansi::Fg::Yellow,
+                        sig,
+                        ansi::Fg::Reset
+                    )?;
+                },
+                Property(name, mutable) => {
+                    fmt_tab(f, depth)?;
+                    writeln!(
+                        f,
+                        "{}Property{} {} {}{}{}: {}{}",
+                        ansi::Fg::Cyan,
+                        ansi::Fg::Green,
+                        if *mutable {
+                            "variable"
+                        }else{
+                            "value"
+                        },
+                        ansi::Fg::White,
+                        name,
+                        ansi::Fg::Blue,
+                        sig,
+                        ansi::Fg::Reset
+                    )?;
+                }
+                LocalVar(name, mutable) => {
+                    fmt_tab(f, depth)?;
+                    writeln!(
+                        f,
+                        "{}Local{} {} {}{}{}: {}{}",
+                        ansi::Fg::Cyan,
+                        ansi::Fg::Green,
+                        if *mutable {
+                            "value"
+                        }else{
+                            "variable"
+                        },
+                        ansi::Fg::White,
+                        name,
+                        ansi::Fg::Blue,
+                        sig,
+                        ansi::Fg::Reset
+                    )?;
+                },
+                Integer(i) => {
+                    fmt_tab(f, depth)?;
+                    writeln!(
+                        f,
+                        "{}Int {}{}",
+                        ansi::Fg::Cyan,
+                        ansi::Fg::Green,
+                        i
+                    )?;
+                },
+                Float(i) => {
+                    fmt_tab(f, depth)?;
+                    writeln!(
+                        f,
+                        "{}Float {}{}{}",
+                        ansi::Fg::Cyan,
+                        ansi::Fg::Green,
+                        i,
+                        ansi::Fg::Reset
+                    )?;
+                },
+                String(i) => {
+                    fmt_tab(f, depth)?;
+                    writeln!(
+                        f,
+                        "{}String {}{}{}",
+                        ansi::Fg::Cyan,
+                        ansi::Fg::Green,
+                        i,
+                        ansi::Fg::Reset
+                    )?;
+                },
+                Unit => {
+                    fmt_tab(f, depth)?;
+                    writeln!(
+                        f,
+                        "{}Unit{}",
+                        ansi::Fg::Cyan,
+                        ansi::Fg::Reset,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
