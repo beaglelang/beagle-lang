@@ -5,7 +5,7 @@ use core::ansi::{Bg, Fg};
 use std::sync::mpsc::{Receiver, Sender};
 
 use ir::{
-    hir::{ChannelIr, Instruction},
+    hir::{HIR, HIRInstruction},
     type_signature::TypeSignature,
 };
 
@@ -30,7 +30,7 @@ pub enum ParseContext{
 
 pub struct Parser<'a> {
     pub name: String,
-    pub ir_tx: Arc<Mutex<Sender<Option<ChannelIr>>>>,
+    pub ir_tx: Arc<Mutex<Sender<Option<HIR>>>>,
     pub token_rx: Receiver<LexerToken<'a>>,
     pub notice_tx: Sender<Option<Notice>>,
     pub context: ParseContext,
@@ -41,7 +41,7 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     pub fn new(
         name: String,
-        ir_tx: Sender<Option<ChannelIr>>,
+        ir_tx: Sender<Option<HIR>>,
         token_rx: Receiver<LexerToken<'a>>,
         notice_tx: Sender<Option<Notice>>,
     ) -> Self {
@@ -91,10 +91,10 @@ impl<'a> Parser<'a> {
 
     pub fn emit_notice(&self, pos: Position, level: NoticeLevel, msg: String) {
         if level == NoticeLevel::Error {
-            if let Err(e) = self.ir_tx.lock().unwrap().send(Some(ChannelIr {
+            if let Err(e) = self.ir_tx.lock().unwrap().send(Some(HIR {
                 pos,
                 sig: TypeSignature::None,
-                ins: Instruction::Halt,
+                ins: HIRInstruction::Halt,
             })) {
                 eprintln!(
                     "{}Parser notice send error: {}{}",
@@ -129,8 +129,13 @@ impl<'a> Parser<'a> {
     }
 
     #[inline]
-    pub fn emit_ir(&mut self, pos: Position, sig: TypeSignature, ins: Instruction) {
-        let ir = ChannelIr { pos, sig, ins };
+    pub fn check_next(&mut self, type_: TokenType) -> bool {
+        self.next_token().type_ == type_
+    }
+
+    #[inline]
+    pub fn emit_ir(&mut self, pos: Position, sig: TypeSignature, ins: HIRInstruction) {
+        let ir = HIR { pos, sig, ins };
         self.ir_tx
             .lock()
             .expect("Failed to acquire lock on ir_tx sender.")
@@ -141,6 +146,16 @@ impl<'a> Parser<'a> {
     #[inline]
     pub fn check_consume(&mut self, type_: TokenType) -> bool {
         if self.check(type_) {
+            self.advance().unwrap();
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    pub fn check_consume_next(&mut self, type_: TokenType) -> bool {
+        if self.check_next(type_) {
             self.advance().unwrap();
             true
         } else {
@@ -168,16 +183,17 @@ impl<'a> Parser<'a> {
 
     pub async fn parse<'p>(
         name: String,
-        ir_tx: Sender<Option<ChannelIr>>,
+        ir_tx: Sender<Option<HIR>>,
         token_rx: Receiver<LexerToken<'p>>,
         notice_tx: Sender<Option<Notice>>,
     ) -> Result<(), String> {
         let mut parser = Parser::new(name, ir_tx, token_rx, notice_tx);
-        &parser.advance().unwrap();
-        &parser.advance().unwrap();
+        parser.advance().unwrap();
+        parser.advance().unwrap();
         match functions::module(&mut parser) {
             Ok(()) => {
                 parser.emit_notice(Position::default(), NoticeLevel::Halt, "Halt".to_string());
+
                 return Ok(());
             }
             Err(_) => {

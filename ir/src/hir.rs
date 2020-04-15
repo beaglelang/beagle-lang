@@ -7,7 +7,7 @@ pub struct Module {
     /// The name of the module
     pub name: String,
     /// The ir instructions
-    pub instructions: Vec<Instruction>,
+    pub instructions: Vec<HIRInstruction>,
     /// The signatures of each ir instruction
     pub signatures: Vec<TypeSignature>,
     /// The positions in code of each ir instruction
@@ -24,12 +24,12 @@ impl Module {
         }
     }
 
-    pub fn push_ir(&mut self, ir: ChannelIr) {
+    pub fn push_ir(&mut self, ir: HIR) {
         self.push(ir.pos, ir.sig, ir.ins)
     }
 
     /// Push an instruction into the module
-    pub fn push(&mut self, pos: Position, sig: TypeSignature, ins: Instruction) {
+    pub fn push(&mut self, pos: Position, sig: TypeSignature, ins: HIRInstruction) {
         self.positions.push(pos);
         self.signatures.push(sig);
         self.instructions.push(ins);
@@ -37,14 +37,14 @@ impl Module {
 }
 
 #[derive(Debug, Clone)]
-pub struct ChannelIr {
+pub struct HIR {
     pub pos: Position,
     pub sig: TypeSignature,
-    pub ins: Instruction,
+    pub ins: HIRInstruction,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum Instruction {
+pub enum HIRInstruction {
     //The module being parsed, which needs a name.
     Module(String),
     EndModule,
@@ -73,26 +73,14 @@ use std::fmt::{
     Result
 };
 
-fn repeat_char(c: char, times: usize) -> String{
-    std::iter::repeat(c).take(times).collect::<String>()
-}
-
-fn fmt_tab(f: &mut Formatter<'_>, depth: usize) -> Result{
-    if depth != 0{
-        for _ in 0 .. depth{
-            write!(f, "|{}", repeat_char(' ', super::TAB_WIDTH))?;
-        }
-        Ok(())
-    }else{
-        Ok(())
-    }
-}
-
 use core::ansi;
+use super::{
+    fmt_tab,
+};
 
 impl Display for Module {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        use Instruction::*;
+        use HIRInstruction::*;
         let mut depth = 0;
         for (ins, sig) in self.instructions.iter().zip(self.signatures.iter()){
             match ins{

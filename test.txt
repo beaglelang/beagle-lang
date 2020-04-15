@@ -1,5 +1,9 @@
 var hello = 5643
 
 fun testFunc(test: String) {
-    let sup: Int = "m8wut"
+    let sup = "m8wut"
+}
+
+fun anotherTest(test: Int, yo: Bool): String{
+    
 }

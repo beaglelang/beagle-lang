@@ -6,7 +6,7 @@ use lexer::tokens;
 
 pub mod parser;
 use core::pos::BiPos;
-use ir::hir::ChannelIr;
+use ir::hir::HIR;
 use parser::Parser;
 
 use std::sync::mpsc::channel;
@@ -22,13 +22,14 @@ impl Driver {
         let instr = std::fs::read_to_string(&path).unwrap();
 
         let (token_tx, token_rx) = channel::<tokens::LexerToken>();
-        let (ir_tx, ir_rx) = channel::<Option<ChannelIr>>();
+        let (ir_tx, ir_rx) = channel::<Option<HIR>>();
         let (notice_tx, notice_rx) = channel::<Option<Notice>>();
-        let (typeck_tx, typeck_rx) = channel::<Option<ChannelIr>>();
-
+        let (typeck_tx, typeck_rx) = channel::<Option<HIR>>();
+        
         let mut lexer = lexer::Lexer::new(instr.as_str(), token_tx.clone()).unwrap();
         let parser_task = Parser::parse(name.clone(), ir_tx, token_rx, notice_tx.clone());
         let mut tir = ir::hir::Module::new(name.clone());
+        let typeck_task = TypeckVM::start_checking(name.clone(), ir_rx, notice_tx.clone(), typeck_tx);
 
         let lexer_task = lexer.start_tokenizing();
 
@@ -54,9 +55,9 @@ impl Driver {
         };
 
         let ir_task = async {
-            while let Ok(Some(ir)) = ir_rx.recv() {
+            while let Ok(Some(ir)) = typeck_rx.recv() {
                 match ir.ins {
-                    ir::hir::Instruction::Halt => {
+                    ir::hir::HIRInstruction::Halt => {
                         tir.push(ir.pos, ir.sig, ir.ins);
                         break
                     },
@@ -64,14 +65,14 @@ impl Driver {
                 };
             }
         };
-        // let typeck_task = TypeckVM::start_checking(ir_rx, notice_tx.clone());
+        let (lexer_result, parser_result, typeck_result, _, _) =
+            futures::join!(lexer_task, parser_task,typeck_task, notice_task, ir_task);
         // let (lexer_result, parser_result, _, _) =
-        //     futures::join!(lexer_task, parser_task, notice_task, typeck_task);
-        let (lexer_result, parser_result, _, _) =
-            futures::join!(lexer_task, parser_task, notice_task, ir_task);
+        //     futures::join!(lexer_task, parser_task, notice_task, ir_task);
 
         lexer_result.unwrap();
         parser_result.unwrap();
+        typeck_result.unwrap();
 
         tir
     }
