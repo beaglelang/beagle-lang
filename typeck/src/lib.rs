@@ -204,7 +204,6 @@ impl TypeckVM{
                 _ => self.ir_stack.push(ir_clone)
             }
         }
-        self.emit_notice("Halting".to_string(), NoticeLevel::Halt, BiPos::default()).expect("Failed to send a notice from the type checker.");
         Ok(())
     }
 

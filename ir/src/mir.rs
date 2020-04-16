@@ -1,6 +1,11 @@
 use core::pos::BiPos;
-use crate::type_signature::{
-    TypeSignature
+use crate::{
+    type_signature::{
+        TypeSignature
+    },
+    hir::{
+        HIRInstruction
+    }
 };
 
 use serde::{Serialize, Deserialize};
@@ -60,12 +65,13 @@ pub enum MIRInstruction{
     ///Either an object contruction or a lateinit instruction must proceed this.
     StackAlloc(usize),
     ///Uninitialized/late initializer.
-    ///This is used for preallocating something without an immediate value. 
+    ///This is used for leaving an resource empty until further notice.
+    ///For immutable objects, this grants one free initial mutation for initialization, to which all subsequent mutations will become invalid. 
     ///`None` is the placehold value, so instead of an unsafe empty place in memory, None will fill the emptyness.
     ///`None` is an object that can be stretched to fit any place whatsoever, and will simply just be garbage data.
     ///The syntax for this is:
     ///     let something: A = None
-    Lateinit(usize),
+    Lateinit,
     ///Mutate object `name`.
     ///An expression must proceed this instruction.
     ObjMut(String),
@@ -73,10 +79,30 @@ pub enum MIRInstruction{
     Halt
 }
 
+impl MIRInstruction{
+    pub fn from_hir(ins: HIRInstruction) -> MIRInstruction{
+        match ins{
+            HIRInstruction::Module(m) => MIRInstruction::Module(m),
+            HIRInstruction::EndModule => MIRInstruction::EndModule,
+            HIRInstruction::Fn(name) => MIRInstruction::Fun(name),
+            HIRInstruction::EndFn => MIRInstruction::EndFun,
+            HIRInstruction::FnParam(m) => MIRInstruction::FunParam(m),
+            HIRInstruction::LocalVar(name, mutable) => MIRInstruction::ObjInit(name, mutable),
+            HIRInstruction::Property(name, mutable) => MIRInstruction::ObjInit(name, mutable),
+            HIRInstruction::Integer(i) => MIRInstruction::Integer(i),
+            HIRInstruction::Float(f) => MIRInstruction::Float(f),
+            HIRInstruction::String(s) => MIRInstruction::String(s),
+            HIRInstruction::Bool(b) => MIRInstruction::Bool(b),
+            HIRInstruction::Halt => MIRInstruction::Halt,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MIR{
-    pos: BiPos,
-    sig: TypeSignature,
-    ins: MIRInstruction
+    pub pos: BiPos,
+    pub sig: TypeSignature,
+    pub ins: MIRInstruction
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,212 +137,5 @@ impl Module {
         self.positions.push(pos);
         self.signatures.push(sig);
         self.instructions.push(ins);
-    }
-}
-
-use std::fmt::{
-    Display,
-    Formatter,
-    Result,
-};
-use core::ansi;
-use super::fmt_tab;
-
-impl Display for Module {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        use MIRInstruction::*;
-        let mut depth = 0;
-        for (ins, sig) in self.instructions.iter().zip(self.signatures.iter()){
-            match ins{
-                Halt => {
-                    fmt_tab(f, depth)?;
-                    writeln!(f, "{}HALT{}", ansi::Fg::BrightRed, ansi::Fg::Reset)?;
-                },
-                Module(mname) => {
-                    fmt_tab(f, depth)?;
-                    depth += 1;
-                    writeln!(
-                        f,
-                        "{}Module{} {}{}",
-                        ansi::Fg::Blue,
-                        ansi::Fg::Yellow,
-                        mname,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                EndModule => {
-                    depth -= 1;
-                    writeln!(
-                        f,
-                        "{}EndMod{}",
-                        ansi::Fg::Blue,
-                        ansi::Fg::Reset
-                    )?;
-                }
-                Fun(name) => {
-                    fmt_tab(f, depth)?;
-                    depth += 1;
-                    writeln!(
-                        f,
-                        "{}Function{} {}{}{}",
-                        ansi::Fg::Cyan,
-                        ansi::Fg::Red,
-                        name,
-                        sig,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                EndFn => {
-                    depth -= 1;
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}EndFun{}",
-                        ansi::Fg::Cyan,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                FunParam(name) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}Parameter{} {}: {}{}{}",
-                        ansi::Fg::Cyan,
-                        ansi::Fg::White,
-                        name,
-                        ansi::Fg::Yellow,
-                        sig,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                ObjInit(name, mutable) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}Init{} {} {}{}{}: {}{}",
-                        ansi::Fg::Cyan,
-                        ansi::Fg::Green,
-                        if *mutable {
-                            "variable"
-                        }else{
-                            "value"
-                        },
-                        ansi::Fg::White,
-                        name,
-                        ansi::Fg::Blue,
-                        sig,
-                        ansi::Fg::Reset
-                    )?;
-                }
-                Integer(i) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}Int {}{}",
-                        ansi::Fg::Cyan,
-                        ansi::Fg::Green,
-                        i
-                    )?;
-                },
-                Float(i) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}Float {}{}{}",
-                        ansi::Fg::Cyan,
-                        ansi::Fg::Green,
-                        i,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                String(i) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}String {}\"{}\"{}",
-                        ansi::Fg::Cyan,
-                        ansi::Fg::Green,
-                        i,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                Unit => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}Unit{}",
-                        ansi::Fg::Cyan,
-                        ansi::Fg::Reset,
-                    )?;
-                },
-                Drop(name) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}Drop {}{}{}",
-                        ansi::Fg::Magenta,
-                        ansi::Fg::White,
-                        name,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                Ref(name) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}Ref {}{}{}",
-                        ansi::Fg::BrightRed,
-                        ansi::Fg::White,
-                        name,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                Move(name) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}Mov {}{}{}",
-                        ansi::Fg::BrightRed,
-                        ansi::Fg::White,
-                        name,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                Copy(name) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}Copy {}{}{}",
-                        ansi::Fg::BrightRed,
-                        ansi::Fg::White,
-                        name,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                HeapAlloc(size) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}HeapAlloc({}{}){}",
-                        ansi::Fg::Blue,
-                        ansi::Fg::White,
-                        size,
-                        ansi::Fg::Reset
-                    )?;
-                },
-                StackAlloc(size) => {
-                    fmt_tab(f, depth)?;
-                    writeln!(
-                        f,
-                        "{}StackAlloc({}{}){}",
-                        ansi::Fg::Blue,
-                        ansi::Fg::White,
-                        size,
-                        ansi::Fg::Reset
-                    )?;
-                },
-            }
-        }
-        Ok(())
     }
 }

@@ -1,0 +1,12 @@
+[package]
+name = "memmy"
+version = "0.1.0"
+authors = ["Alex Couch <alcouch65@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ir = { path = "../ir", version = "*" }
+core = { path = "../core", version = "*" }
+notices = { path = "../notices", version = "*" }
