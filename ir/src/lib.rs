@@ -253,25 +253,31 @@ impl Display for Module {
                         ansi::Fg::Reset
                     )?;
                 },
-                HeapAlloc(size) => {
+                HeapAlloc(name, size) => {
                     fmt_tab(f, depth)?;
                     writeln!(
                         f,
-                        "{}HeapAlloc({}{}){}",
+                        "{}{} = {}HeapAlloc({}{}{}){}",
+                        ansi::Fg::White,
+                        name,
                         ansi::Fg::Blue,
                         ansi::Fg::White,
                         size,
+                        ansi::Fg::Blue,
                         ansi::Fg::Reset
                     )?;
                 },
-                StackAlloc(size) => {
+                StackAlloc(name, size) => {
                     fmt_tab(f, depth)?;
                     writeln!(
                         f,
-                        "{}StackAlloc({}{}){}",
+                        "{}{} = {}StackAlloc({}{}{}){}",
+                        ansi::Fg::White,
+                        name,
                         ansi::Fg::Blue,
                         ansi::Fg::White,
                         size,
+                        ansi::Fg::Blue,
                         ansi::Fg::Reset
                     )?;
                 },

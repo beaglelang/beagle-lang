@@ -65,23 +65,28 @@ impl MemmyGenerator{
         return Ok(())
     }
 
-    fn determine_alloc_size(&mut self, hir: HIR) -> Option<usize>{
+    fn determine_alloc_size(&mut self, hir: HIR) -> Option<(usize, Option<MIR>)>{
         match hir.sig{
             TypeSignature::Primitive(t) => match t{
-                PrimitiveType::Float => Some(size_of::<f32>()),
-                PrimitiveType::Integer => Some(size_of::<i32>()),
-                PrimitiveType::Bool => Some(size_of::<bool>()),
+                PrimitiveType::Float => Some((size_of::<f32>(), None)),
+                PrimitiveType::Integer => Some((size_of::<i32>(), None)),
+                PrimitiveType::Bool => Some((size_of::<bool>(), None)),
                 PrimitiveType::String => {
                     let next_hir = self.typeck_rx.recv().unwrap().unwrap();
                     return if let HIRInstruction::String(s) = next_hir.ins{
-                        Some(s.len())
+                        let mir = MIR{
+                            pos: next_hir.pos,
+                            sig: next_hir.sig,
+                            ins: MIRInstruction::String(s.clone())
+                        };
+                        Some((s.len(), Some(mir)))
                     }else{
                         self.emit_error(format!("Failed to determine size of String object: Expected a String object but instead got {:?}", hir.ins), next_hir.pos).unwrap();
                         None
                     }
                 },
                 _ => {
-                    Some(size_of::<usize>())
+                    Some((size_of::<usize>(), None))
                 }
             },
             TypeSignature::Untyped => {
@@ -134,7 +139,7 @@ impl MemmyGenerator{
                         MIR{
                             pos: prealloc_clone.pos,
                             sig: prealloc_clone.sig,
-                            ins: MIRInstruction::StackAlloc(size)
+                            ins: MIRInstruction::StackAlloc(name.clone(), size.0)
                         }
                     );
                     let clone = next_hir.clone();
@@ -145,6 +150,9 @@ impl MemmyGenerator{
                             ins: MIRInstruction::ObjInit(name.clone(), *mutable)
                         }
                     );
+                    if let Some(mir) = size.1{
+                        other.push(mir)
+                    }
                 },
                 HIRInstruction::Property(name, mutable) => {
                     let size_clone = next_hir.clone();
@@ -160,7 +168,7 @@ impl MemmyGenerator{
                         MIR{
                             pos: prealloc_clone.pos,
                             sig: prealloc_clone.sig,
-                            ins: MIRInstruction::HeapAlloc(size)
+                            ins: MIRInstruction::HeapAlloc(name.clone(), size.0)
                         }
                     );
                     let clone = next_hir.clone();
@@ -170,7 +178,10 @@ impl MemmyGenerator{
                             sig: clone.sig,
                             ins: MIRInstruction::ObjInit(name.clone(), *mutable)
                         }
-                    )
+                    );
+                    if let Some(mir) = size.1{
+                        other.push(mir)
+                    }
                 },
                 HIRInstruction::EndFn => {
                     other.push(MIR{
@@ -263,14 +274,17 @@ impl MemmyGenerator{
                     self.completed_mir.push(MIR{
                         pos: alloc_hir_clone.pos,
                         sig: alloc_hir_clone.sig,
-                        ins: MIRInstruction::HeapAlloc(size)
+                        ins: MIRInstruction::HeapAlloc(name.clone(), size.0)
                     });
                     let obj_clone = hir.clone();
                     self.completed_mir.push(MIR{
                         pos: obj_clone.pos,
                         sig: obj_clone.sig,
                         ins: MIRInstruction::ObjInit(name.clone(), *mutable)
-                    })
+                    });
+                    if let Some(mir) = size.1{
+                        self.completed_mir.push(mir)
+                    }
                 },
                 HIRInstruction::Halt => {
                     self.completed_mir.push(MIR{

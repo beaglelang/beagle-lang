@@ -59,11 +59,11 @@ pub enum MIRInstruction{
     ///Where n is the number of references to a local variable, all references until n-1 will result in this instruction,
     /// whereas the final reference to a local variable will result in a Move instruction.
     Copy(String),
-    ///Heap allocation of `size`
-    HeapAlloc(usize),
-    ///Stack allocation of `size`.
+    ///Heap allocation of `size` for object `name`
+    HeapAlloc(String, usize),
+    ///Stack allocation of `size` for object `name`.
     ///Either an object contruction or a lateinit instruction must proceed this.
-    StackAlloc(usize),
+    StackAlloc(String, usize),
     ///Uninitialized/late initializer.
     ///This is used for leaving an resource empty until further notice.
     ///For immutable objects, this grants one free initial mutation for initialization, to which all subsequent mutations will become invalid. 
