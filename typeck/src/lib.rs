@@ -9,13 +9,50 @@ use ir::{
     },
 };
 use notices::*;
-use std::sync::mpsc::{
-    Sender, Receiver
+use std::sync::{
+    mpsc::{
+        Sender, Receiver
+    },
+    Arc, Mutex
 };
 
-use core::pos::BiPos;
+use futures::executor::ThreadPool;
 
-pub struct TypeckVM{
+use core::pos::BiPos as Position;
+
+pub struct TypeckManager{
+    thread_pool: ThreadPool,
+    notice_tx: ,
+}
+
+impl TypeckManager{
+    pub fn new(notice_tx: Sender<Option<Notice>>) -> Self{
+        TypeckManager{
+            thread_pool: ThreadPool::new().unwrap(),
+            notice_tx,
+        }
+    }
+
+    pub fn enqueue_module(&self, module_name: String, hir_rx: Receiver<Option<HIR>>, typeck_tx: Sender<Option<HIR>>){
+        let notice_tx_clone = self.notice_tx.clone();
+        let module_name_clone = module_name.clone();
+        self.thread_pool.spawn_ok(async move{
+            let parser = Typeck::start_checking(module_name_clone.clone(), hir_rx, notice_tx_clone.unwrap(), typeck_tx);
+            if let Err(msg) = parser{
+                let notice = Notice{
+                    from: "Typeck".to_string(),
+                    file: module_name_clone,
+                    level: NoticeLevel::Error,
+                    msg,
+                    pos: Position::default()
+                };
+                notice_tx_clone.clone().lock().expect("Failed to acquire lock on notice sender.").send(Some(notice)).unwrap();
+            };
+        });
+    }
+}
+
+pub struct Typeck{
     module_name: String,
     ir_stack: Vec<HIR>,
     ir_rx: Receiver<Option<HIR>>,
@@ -23,8 +60,8 @@ pub struct TypeckVM{
     typeck_tx: Sender<Option<HIR>>,
 }
 
-impl TypeckVM{
-    fn emit_notice(&mut self, msg: String, level: NoticeLevel, pos: BiPos) -> Result<(),()>{
+impl Typeck{
+    fn emit_notice(&mut self, msg: String, level: NoticeLevel, pos: Position) -> Result<(),()>{
         if level == NoticeLevel::Error{
             if self.notice_tx.send(
                 Some(notices::Notice{
@@ -207,9 +244,9 @@ impl TypeckVM{
         Ok(())
     }
 
-    pub async fn start_checking(module_name: String, ir_rx: Receiver<Option<HIR>>, notice_tx: Sender<Option<Notice>>, typeck_tx: Sender<Option<HIR>>) -> Result<(), ()>{
+    pub fn start_checking(module_name: String, ir_rx: Receiver<Option<HIR>>, notice_tx: Sender<Option<Notice>>, typeck_tx: Sender<Option<HIR>>) -> Result<(), String>{
         let mut typeck = Self{
-            module_name,
+            module_name: module_name.clone(),
             ir_stack: Vec::new(),
             ir_rx,
             notice_tx,
@@ -221,7 +258,9 @@ impl TypeckVM{
         }
 
         for ir in typeck.ir_stack{
-            typeck.typeck_tx.send(Some(ir)).unwrap();
+            if let Err(_) = typeck.typeck_tx.send(Some(ir)){
+                return Err(format!("Failed to send type checked ir for module '{}' because the IR channel was expected to be open but is instead closed.", module_name.clone()))
+            }
         }
         
         

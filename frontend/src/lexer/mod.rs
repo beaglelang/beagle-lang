@@ -1,10 +1,32 @@
 use core::pos::BiPos;
 use lazy_static::lazy_static;
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    VecDeque
+};
 use std::io::Result;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc::Sender,mpsc::Receiver, Arc, Mutex};
+use futures::{
+    future::{
+        Future,
+        Lazy,
+        lazy
+    },
+    executor::ThreadPool,
+};
+use std::thread::*;
+use core::thread_pool::{
+    Job
+};
+
+use notices::*;
 
 pub mod tokens;
+use tokens::{
+    LexerToken,
+    TokenData,
+    TokenType
+};
 
 lazy_static! {
     static ref IDENT_MAP: HashMap<&'static str, tokens::TokenType> = {
@@ -19,26 +41,72 @@ lazy_static! {
     };
 }
 
+pub struct LexerManager{
+    thread_pool: ThreadPool,
+    notice_tx: Arc<Mutex<Sender<Option<Notice>>>>,
+}
+
+impl LexerManager{
+    pub fn new(notice_tx: Sender<Option<Notice>>) -> Self{
+        LexerManager{
+            thread_pool: ThreadPool::new().unwrap(),
+            notice_tx: Arc::new(Mutex::new(notice_tx))
+        }
+    }
+
+    pub fn enqueue_module(&self, module_name: String, input: String, parser_tx: Sender<LexerToken<'static>>){
+        let notice_tx_clone = self.notice_tx.clone();
+        let parser_tx_clone = parser_tx.clone();
+        self.thread_pool.spawn_ok(async move{
+            let lexer_result = Lexer::new(input.clone(), Arc::new(Mutex::new(parser_tx_clone)));
+            let mut lexer = if let Ok(l) = lexer_result{
+                l
+            }else{
+                let notice = Notice{
+                    from: "Lexer".to_string(),
+                    file: module_name.clone(),
+                    level: NoticeLevel::Error,
+                    msg: "Failed to start lexer. Unknown reasons. Please report this to author.".to_string(),
+                    pos: BiPos::default()
+                };
+                notice_tx_clone.lock().expect("Failed to acquire lock on notice sender.").send(Some(notice)).unwrap();
+                return
+            };
+            let tokenizer_result = lexer.start_tokenizing();
+            if let Err(msg) = tokenizer_result{
+                let notice = Notice{
+                    from: "Lexer".to_string(),
+                    file: module_name.clone(),
+                    level: NoticeLevel::Error,
+                    msg,
+                    pos: BiPos::default()
+                };
+                notice_tx_clone.lock().expect("Failed to acquire lock on notice sender.").send(Some(notice)).unwrap();
+            };
+        });
+    }
+}
+
 pub struct Lexer<'a> {
     input: &'a str,
     source: Option<&'a str>,
     char_idx: usize,
     current_pos: BiPos,
 
-    pub token_sender: Arc<Mutex<mpsc::Sender<tokens::LexerToken<'a>>>>,
+    pub token_sender: Arc<Mutex<Sender<tokens::LexerToken<'a>>>>,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(
-        input: &'a str,
-        token_tx: mpsc::Sender<tokens::LexerToken<'a>>,
+        input: String,
+        token_tx: Arc<Mutex<Sender<LexerToken<'a>>>>,
     ) -> Result<Box<Lexer<'a>>> {
         let lexer = Box::new(Lexer {
-            input,
-            source: Some(input),
+            input: input.as_str(),
+            source: Some(input.as_str()),
             char_idx: 0,
             current_pos: BiPos::default(),
-            token_sender: Arc::new(Mutex::new(token_tx)),
+            token_sender: token_tx,
         });
         Ok(lexer)
     }
@@ -314,11 +382,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub async fn start_tokenizing(&mut self) -> std::result::Result<(), String> {
+    pub fn start_tokenizing(&mut self) -> std::result::Result<(), String> {
         let sender_arc = self.token_sender.clone();
-        let guard = sender_arc
-            .lock()
-            .expect("Unable to get token sender from arc mutex.");
+        let guard = self.token_sender.lock().unwrap();
         loop {
             let token = self.get_token();
             match token {
@@ -332,7 +398,7 @@ impl<'a> Lexer<'a> {
                         }
                         tokens::TokenType::Err => {
                             return Err(format!(
-                                "En error occurred while tokenizing input: {:?}",
+                                "An error occurred while tokenizing input: {:?}",
                                 t
                             )
                             .to_string())

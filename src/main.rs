@@ -6,7 +6,7 @@ use std::path::Path;
 use std::thread;
 
 fn main() -> std::io::Result<()> {
-    let driver = Driver;
+    let driver = Driver::new();
     let tir = futures::executor::block_on(driver.begin_parsing(Path::new("test.txt")));
     println!("{}", tir);
     Ok(())

@@ -14,3 +14,4 @@ core = { path = "../core", version = "0.0.1" }
 notices = { path = "../notices", version = "*" }
 typeck = { path = "../typeck", version = "*" }
 memmy = { path = "../memmy", version = "*" }
+symbol_table = { path = "../symbol_table", version = "*" }

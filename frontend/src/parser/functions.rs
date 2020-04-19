@@ -5,7 +5,10 @@ use crate::{
 };
 
 use ir::{
-    hir::HIRInstruction,
+    hir::{
+        HIR,
+        HIRInstruction
+    },
     type_signature::{PrimitiveType, TypeSignature},
 };
 
@@ -230,9 +233,17 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
         parameters: params,
         return_type_signature: Box::new(TypeSignature::Primitive(PrimitiveType::new(typename.as_str())))
     });
-    p.emit_ir(lpos, function_sig, ir::hir::HIRInstruction::Fn(name));
+    let hir = HIR{
+        pos: lpos,
+        sig: function_sig,
+        ins: HIRInstruction::Fn(name)
+    };
+    p.emit_ir_whole(hir);
     for ir in param_ir{
-        p.emit_ir(ir.pos, ir.sig, ir.ins);
+        p.emit_ir_whole(ir);
+        if let HIRInstruction::FnParam(name) = ir.ins{
+            p.symbols.push_local(name, name, &hir)
+        }
     }
     if p.consume(TokenType::LCurly).is_err(){
         return Err(())

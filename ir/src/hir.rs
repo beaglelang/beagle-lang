@@ -2,7 +2,7 @@ use super::type_signature::TypeSignature;
 use core::pos::BiPos as Position;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HIR {
     pub pos: Position,
     pub sig: TypeSignature,

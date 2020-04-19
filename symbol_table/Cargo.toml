@@ -1,5 +1,5 @@
 [package]
-name = "typeck"
+name = "symbol_table"
 version = "0.1.0"
 authors = ["Alex Couch <alcouch65@gmail.com>"]
 edition = "2018"
@@ -8,6 +8,4 @@ edition = "2018"
 
 [dependencies]
 ir = { path = "../ir", version = "*" }
-notices = { path = "../notices", version = "*" }
-core = { path = "../core", version = "*" }
-futures = { version = "*", features = ["thread-pool"] }
+serde = { version = "*" }

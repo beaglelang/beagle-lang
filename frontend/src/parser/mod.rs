@@ -9,11 +9,17 @@ use ir::{
     type_signature::TypeSignature,
 };
 
-use core::pos::BiPos as Position;
+use core::{
+    pos::BiPos as Position 
+};
+
+use symbol_table::SymbolTable;
 
 use std::sync::{Arc, Mutex};
 
 use notices::{Notice, NoticeLevel};
+
+use futures::executor::ThreadPool;
 
 pub mod functions;
 pub mod rules;
@@ -28,12 +34,44 @@ pub enum ParseContext{
     Local
 }
 
+pub struct ParseManager{
+    thread_pool: ThreadPool,
+    notice_tx: Arc<Mutex<Sender<Option<Notice>>>>,
+}
+
+impl ParseManager{
+    pub fn new(notice_tx: Sender<Option<Notice>>) -> Self{
+        ParseManager{
+            thread_pool: ThreadPool::new().unwrap(),
+            notice_tx: Arc::new(Mutex::new(notice_tx)),
+        }
+    }
+
+    pub fn enqueue_module(&self, module_name: String, token_rx: Receiver<LexerToken<'static>>, hir_tx: Sender<Option<HIR>>){
+        let notice_tx_clone = self.notice_tx.clone();
+        self.thread_pool.spawn_ok(async{
+            let parser = Parser::parse(module_name.clone(), hir_tx, token_rx, notice_tx_clone.into_inner().unwrap());
+            if let Err(msg) = parser{
+                let notice = Notice{
+                    from: "Parser".to_string(),
+                    file: module_name.clone(),
+                    level: NoticeLevel::Error,
+                    msg,
+                    pos: Position::default()
+                };
+                notice_tx_clone.lock().expect("Failed to acquire lock on notice sender.").send(Some(notice)).unwrap();
+            };
+        });
+    }
+}
+
 pub struct Parser<'a> {
     pub name: String,
     pub ir_tx: Arc<Mutex<Sender<Option<HIR>>>>,
     pub token_rx: Receiver<LexerToken<'a>>,
     pub notice_tx: Sender<Option<Notice>>,
     pub context: ParseContext,
+    pub symbols: SymbolTable<'a>,
 
     active_tokens: [LexerToken<'a>; 3],
 }
@@ -51,6 +89,7 @@ impl<'a> Parser<'a> {
             token_rx,
             notice_tx,
             context: ParseContext::TopLevel,
+            symbols: SymbolTable::default(),
             active_tokens: [
                 LexerToken::default(),
                 LexerToken::default(),
@@ -134,13 +173,18 @@ impl<'a> Parser<'a> {
     }
 
     #[inline]
-    pub fn emit_ir(&mut self, pos: Position, sig: TypeSignature, ins: HIRInstruction) {
-        let ir = HIR { pos, sig, ins };
+    pub fn emit_ir_whole(&mut self, hir: HIR){
         self.ir_tx
             .lock()
             .expect("Failed to acquire lock on ir_tx sender.")
-            .send(Some(ir))
+            .send(Some(hir))
             .expect(format!("Failed to send IR through IR channel.").as_str())
+    }
+
+    #[inline]
+    pub fn emit_ir(&mut self, pos: Position, sig: TypeSignature, ins: HIRInstruction) {
+        let ir = HIR { pos, sig, ins };
+        self.emit_ir_whole(ir)
     }
 
     #[inline]
@@ -181,7 +225,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub async fn parse<'p>(
+    pub fn parse<'p>(
         name: String,
         ir_tx: Sender<Option<HIR>>,
         token_rx: Receiver<LexerToken<'p>>,
@@ -193,7 +237,6 @@ impl<'a> Parser<'a> {
         match functions::module(&mut parser) {
             Ok(()) => {
                 parser.emit_notice(Position::default(), NoticeLevel::Halt, "Halt".to_string());
-
                 return Ok(());
             }
             Err(_) => {
