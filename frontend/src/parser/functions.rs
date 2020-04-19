@@ -236,13 +236,13 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
     let hir = HIR{
         pos: lpos,
         sig: function_sig,
-        ins: HIRInstruction::Fn(name)
+        ins: HIRInstruction::Fn(name.clone())
     };
     p.emit_ir_whole(hir);
     for ir in param_ir{
-        p.emit_ir_whole(ir);
-        if let HIRInstruction::FnParam(name) = ir.ins{
-            p.symbols.push_local(name, name, &hir)
+        p.emit_ir_whole(ir.clone());
+        if let HIRInstruction::FnParam(param_name) = &ir.ins{
+            p.symbols.push_local(name.clone(), param_name.clone(), ir.clone())
         }
     }
     if p.consume(TokenType::LCurly).is_err(){

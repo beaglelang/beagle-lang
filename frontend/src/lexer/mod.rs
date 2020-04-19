@@ -54,7 +54,7 @@ impl LexerManager{
         }
     }
 
-    pub fn enqueue_module(&self, module_name: String, input: String, parser_tx: Sender<LexerToken<'static>>){
+    pub fn enqueue_module(&self, module_name: String, input: &'static str, parser_tx: Sender<LexerToken<'static>>){
         let notice_tx_clone = self.notice_tx.clone();
         let parser_tx_clone = parser_tx.clone();
         self.thread_pool.spawn_ok(async move{
@@ -64,7 +64,7 @@ impl LexerManager{
             }else{
                 let notice = Notice{
                     from: "Lexer".to_string(),
-                    file: module_name.clone(),
+                    file: module_name.clone().to_string(),
                     level: NoticeLevel::Error,
                     msg: "Failed to start lexer. Unknown reasons. Please report this to author.".to_string(),
                     pos: BiPos::default()
@@ -76,7 +76,7 @@ impl LexerManager{
             if let Err(msg) = tokenizer_result{
                 let notice = Notice{
                     from: "Lexer".to_string(),
-                    file: module_name.clone(),
+                    file: module_name.clone().to_string(),
                     level: NoticeLevel::Error,
                     msg,
                     pos: BiPos::default()
@@ -98,12 +98,13 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(
-        input: String,
+        input: &'a str,
         token_tx: Arc<Mutex<Sender<LexerToken<'a>>>>,
     ) -> Result<Box<Lexer<'a>>> {
+        let input_str = input.clone();
         let lexer = Box::new(Lexer {
-            input: input.as_str(),
-            source: Some(input.as_str()),
+            input: input_str.clone(),
+            source: Some(input_str.clone()),
             char_idx: 0,
             current_pos: BiPos::default(),
             token_sender: token_tx,

@@ -48,9 +48,9 @@ impl ParseManager{
     }
 
     pub fn enqueue_module(&self, module_name: String, token_rx: Receiver<LexerToken<'static>>, hir_tx: Sender<Option<HIR>>){
-        let notice_tx_clone = self.notice_tx.clone();
-        self.thread_pool.spawn_ok(async{
-            let parser = Parser::parse(module_name.clone(), hir_tx, token_rx, notice_tx_clone.into_inner().unwrap());
+        let notice_tx_clone = self.notice_tx.lock().unwrap().clone();
+        self.thread_pool.spawn_ok(async move{
+            let parser = Parser::parse(module_name.clone(), hir_tx, token_rx, notice_tx_clone.clone());
             if let Err(msg) = parser{
                 let notice = Notice{
                     from: "Parser".to_string(),
@@ -59,7 +59,7 @@ impl ParseManager{
                     msg,
                     pos: Position::default()
                 };
-                notice_tx_clone.lock().expect("Failed to acquire lock on notice sender.").send(Some(notice)).unwrap();
+                notice_tx_clone.clone().send(Some(notice)).unwrap();
             };
         });
     }
@@ -71,7 +71,7 @@ pub struct Parser<'a> {
     pub token_rx: Receiver<LexerToken<'a>>,
     pub notice_tx: Sender<Option<Notice>>,
     pub context: ParseContext,
-    pub symbols: SymbolTable<'a>,
+    pub symbols: SymbolTable,
 
     active_tokens: [LexerToken<'a>; 3],
 }

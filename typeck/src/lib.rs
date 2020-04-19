@@ -22,7 +22,7 @@ use core::pos::BiPos as Position;
 
 pub struct TypeckManager{
     thread_pool: ThreadPool,
-    notice_tx: ,
+    notice_tx: Sender<Option<Notice>>,
 }
 
 impl TypeckManager{
@@ -37,7 +37,7 @@ impl TypeckManager{
         let notice_tx_clone = self.notice_tx.clone();
         let module_name_clone = module_name.clone();
         self.thread_pool.spawn_ok(async move{
-            let parser = Typeck::start_checking(module_name_clone.clone(), hir_rx, notice_tx_clone.unwrap(), typeck_tx);
+            let parser = Typeck::start_checking(module_name_clone.clone(), hir_rx, notice_tx_clone.clone(), typeck_tx);
             if let Err(msg) = parser{
                 let notice = Notice{
                     from: "Typeck".to_string(),
@@ -46,7 +46,7 @@ impl TypeckManager{
                     msg,
                     pos: Position::default()
                 };
-                notice_tx_clone.clone().lock().expect("Failed to acquire lock on notice sender.").send(Some(notice)).unwrap();
+                notice_tx_clone.clone().send(Some(notice)).unwrap();
             };
         });
     }

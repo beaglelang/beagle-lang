@@ -27,6 +27,9 @@ use typeck::{
     TypeckManager
 };
 
+trait ModuleWrapper<'a>{}
+impl<'a> ModuleWrapper<'a> for ir::Module{}
+
 pub struct Driver{
     lexer_manager: lexer::LexerManager,
     parser_manager: parser::ParseManager,
@@ -34,7 +37,7 @@ pub struct Driver{
     notice_rx: Receiver<Option<Notice>>
 }
 
-impl Driver {
+impl<'a> Driver {
     pub fn new() -> Driver{
         let (token_tx, token_rx) = channel::<tokens::LexerToken>();
         let (hir_tx, hir_rx) = channel::<Option<HIR>>();
@@ -56,19 +59,19 @@ impl Driver {
         }
     }
 
-    pub async fn parse_module(&self, path: &Path) -> Result<ir::Module> {
-        let name = path.file_stem().unwrap().to_str().unwrap().to_string();
-        let instr = std::fs::read_to_string(&path).unwrap();
+    pub async fn parse_module(&self, path: &'static Path) -> Result<Box<ir::Module>> {
+        let name = path.file_stem().unwrap().to_str().unwrap();
+        let instr = std::fs::read_to_string(&path).unwrap().as_str();
 
         let (token_tx, token_rx) = channel();
         let (hir_tx, hir_rx) = channel();
         let (typeck_tx, typeck_rx) = channel::<HIR>();
         let (mir_tx, mir_rx) = channel::<MIR>();
 
-        let mut module = ir::Module::new(name.clone());
+        let mut module = ir::Module::new(name.clone().to_string());
 
-        self.lexer_manager.enqueue_module(name.clone(), instr.clone(), token_tx);
-        self.parser_manager.enqueue_module(name.clone(), token_rx, hir_tx);
+        self.lexer_manager.enqueue_module(name.clone().to_string(), instr.clone(), token_tx);
+        self.parser_manager.enqueue_module(name.clone().to_string(), token_rx, hir_tx);
         
 
         let notice_task = async {
@@ -77,7 +80,7 @@ impl Driver {
                     Ok(Some(n)) => {
                         match n.level {
                             NoticeLevel::Halt => break,
-                            _ => n.report(Some(instr.clone().as_str())),
+                            _ => n.report(Some(instr.clone())),
                         };
                     },
                     Ok(_) => continue,
@@ -108,6 +111,6 @@ impl Driver {
 
         futures::join!(ir_task);
         
-        Ok(module)
+        Ok(Box::new(module))
     }
 }

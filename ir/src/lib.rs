@@ -35,7 +35,7 @@ pub struct Module {
 impl Module {
     pub fn new(name: String) -> Self {
         Module {
-            name,
+            name: name.to_string(),
             instructions: Vec::new(),
             signatures: Vec::new(),
             positions: Vec::new(),
