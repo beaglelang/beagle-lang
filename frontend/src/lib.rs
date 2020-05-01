@@ -5,12 +5,10 @@ pub mod lexer;
 use lexer::tokens;
 
 pub mod parser;
-use core::pos::BiPos;
 use ir::{
-    hir::HIR,
+    Chunk,
     mir::{
-        MIR,
-        MIRInstruction
+        MIRInstructions
     },
 };
 use parser::Parser;
@@ -37,13 +35,13 @@ pub struct Driver{
     notice_rx: Receiver<Option<Notice>>
 }
 
-impl<'a> Driver {
+impl Driver {
     pub fn new() -> Driver{
         let (token_tx, token_rx) = channel::<tokens::LexerToken>();
-        let (hir_tx, hir_rx) = channel::<Option<HIR>>();
+        let (hir_tx, hir_rx) = channel::<Option<Chunk>>();
         let (notice_tx, notice_rx) = channel::<Option<Notice>>();
-        let (typeck_tx, typeck_rx) = channel::<Option<HIR>>();
-        let (mir_tx, mir_rx) = channel::<Option<MIR>>();
+        let (typeck_tx, typeck_rx) = channel::<Option<Chunk>>();
+        let (mir_tx, mir_rx) = channel::<Option<Chunk>>();
 
         let lexer_manager = lexer::LexerManager::new(notice_tx.clone());
         let parser_manager = parser::ParseManager::new(notice_tx.clone());
@@ -59,18 +57,21 @@ impl<'a> Driver {
         }
     }
 
-    pub async fn parse_module(&self, path: &'static Path) -> Result<Box<ir::Module>> {
+    pub async fn parse_module(&self, path_str: String) -> Result<Box<ir::Module>> {
+        let path = Path::new(&path_str);
         let name = path.file_stem().unwrap().to_str().unwrap();
-        let instr = std::fs::read_to_string(&path).unwrap().as_str();
+        let path_owned = path.to_owned();
+        let read_in = std::fs::read_to_string(path_owned);
+        let instr = read_in.as_ref().unwrap();
 
         let (token_tx, token_rx) = channel();
         let (hir_tx, hir_rx) = channel();
-        let (typeck_tx, typeck_rx) = channel::<HIR>();
-        let (mir_tx, mir_rx) = channel::<MIR>();
+        let (typeck_tx, typeck_rx) = channel::<Option<Chunk>>();
+        let (mir_tx, mir_rx) = channel::<Option<Chunk>>();
 
         let mut module = ir::Module::new(name.clone().to_string());
 
-        self.lexer_manager.enqueue_module(name.clone().to_string(), instr.clone(), token_tx);
+        self.lexer_manager.enqueue_module(name.clone().to_owned(), instr.clone(), token_tx);
         self.parser_manager.enqueue_module(name.clone().to_string(), token_rx, hir_tx);
         
 
@@ -80,7 +81,7 @@ impl<'a> Driver {
                     Ok(Some(n)) => {
                         match n.level {
                             NoticeLevel::Halt => break,
-                            _ => n.report(Some(instr.clone())),
+                            _ => n.report(Some(instr.clone().as_str())),
                         };
                     },
                     Ok(_) => continue,
@@ -96,20 +97,18 @@ impl<'a> Driver {
         };
 
         let ir_task = async {
-            while let Ok(ir) = mir_rx.recv() {
-                match ir.ins {
-                    MIRInstruction::Halt => {
-                        &module.push(ir.pos, ir.sig, ir.ins);
-                        break
-                    },
-                    _ => {
-                        &module.push(ir.pos, ir.sig, ir.ins);
-                    },
-                };
+            while let Ok(chunk) = mir_rx.recv() {
+                println!("{}", chunk.unwrap());
             }
         };
 
-        futures::join!(ir_task);
+        let parser_ir_task = async{
+            while let Ok(chunk) = hir_rx.recv() {
+                println!("{}", chunk.unwrap());
+            }
+        };
+
+        futures::join!(parser_ir_task, ir_task, notice_task);
         
         Ok(Box::new(module))
     }

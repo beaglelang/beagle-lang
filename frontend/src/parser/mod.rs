@@ -5,12 +5,16 @@ use core::ansi::{Bg, Fg};
 use std::sync::mpsc::{Receiver, Sender};
 
 use ir::{
-    hir::{HIR, HIRInstruction},
-    type_signature::TypeSignature,
+    hir::{HIRInstruction},
+    Chunk,
 };
 
 use core::{
     pos::BiPos as Position 
+};
+
+use ir_traits::{
+    WriteInstruction, ReadInstruction,
 };
 
 use symbol_table::SymbolTable;
@@ -22,7 +26,6 @@ use notices::{Notice, NoticeLevel};
 use futures::executor::ThreadPool;
 
 pub mod functions;
-pub mod rules;
 
 const PREV_TOKEN: usize = 0;
 const CURRENT_TOKEN: usize = 1;
@@ -47,7 +50,7 @@ impl ParseManager{
         }
     }
 
-    pub fn enqueue_module(&self, module_name: String, token_rx: Receiver<LexerToken<'static>>, hir_tx: Sender<Option<HIR>>){
+    pub fn enqueue_module(&self, module_name: String, token_rx: Receiver<LexerToken>, hir_tx: Sender<Option<Chunk>>){
         let notice_tx_clone = self.notice_tx.lock().unwrap().clone();
         self.thread_pool.spawn_ok(async move{
             let parser = Parser::parse(module_name.clone(), hir_tx, token_rx, notice_tx_clone.clone());
@@ -65,22 +68,22 @@ impl ParseManager{
     }
 }
 
-pub struct Parser<'a> {
+pub struct Parser {
     pub name: String,
-    pub ir_tx: Arc<Mutex<Sender<Option<HIR>>>>,
-    pub token_rx: Receiver<LexerToken<'a>>,
+    pub ir_tx: Arc<Mutex<Sender<Option<Chunk>>>>,
+    pub token_rx: Receiver<LexerToken>,
     pub notice_tx: Sender<Option<Notice>>,
     pub context: ParseContext,
     pub symbols: SymbolTable,
 
-    active_tokens: [LexerToken<'a>; 3],
+    active_tokens: [LexerToken; 3],
 }
 
-impl<'a> Parser<'a> {
+impl Parser {
     pub fn new(
         name: String,
-        ir_tx: Sender<Option<HIR>>,
-        token_rx: Receiver<LexerToken<'a>>,
+        ir_tx: Sender<Option<Chunk>>,
+        token_rx: Receiver<LexerToken>,
         notice_tx: Sender<Option<Notice>>,
     ) -> Self {
         Parser {
@@ -99,17 +102,17 @@ impl<'a> Parser<'a> {
     }
 
     #[inline]
-    pub fn current_token(&self) -> &LexerToken<'a> {
+    pub fn current_token(&self) -> &LexerToken {
         &self.active_tokens[CURRENT_TOKEN]
     }
 
     #[inline]
-    pub fn next_token(&self) -> &LexerToken<'a> {
+    pub fn next_token(&self) -> &LexerToken {
         &self.active_tokens[NEXT_TOKEN]
     }
 
     #[inline]
-    pub fn prev_token(&self) -> &LexerToken<'a> {
+    pub fn prev_token(&self) -> &LexerToken {
         &self.active_tokens[PREV_TOKEN]
     }
 
@@ -130,11 +133,9 @@ impl<'a> Parser<'a> {
 
     pub fn emit_notice(&self, pos: Position, level: NoticeLevel, msg: String) {
         if level == NoticeLevel::Error {
-            if let Err(e) = self.ir_tx.lock().unwrap().send(Some(HIR {
-                pos,
-                sig: TypeSignature::None,
-                ins: HIRInstruction::Halt,
-            })) {
+            let mut halt_chunk = Chunk::new();
+            halt_chunk.write_instruction(HIRInstruction::Halt);
+            if let Err(e) = self.ir_tx.lock().unwrap().send(Some(halt_chunk)) {
                 eprintln!(
                     "{}Parser notice send error: {}{}",
                     core::ansi::Fg::BrightRed,
@@ -173,18 +174,12 @@ impl<'a> Parser<'a> {
     }
 
     #[inline]
-    pub fn emit_ir_whole(&mut self, hir: HIR){
+    pub fn emit_ir_whole(&mut self, hir: Chunk){
         self.ir_tx
             .lock()
             .expect("Failed to acquire lock on ir_tx sender.")
             .send(Some(hir))
             .expect(format!("Failed to send IR through IR channel.").as_str())
-    }
-
-    #[inline]
-    pub fn emit_ir(&mut self, pos: Position, sig: TypeSignature, ins: HIRInstruction) {
-        let ir = HIR { pos, sig, ins };
-        self.emit_ir_whole(ir)
     }
 
     #[inline]
@@ -225,10 +220,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse<'p>(
+    pub fn parse(
         name: String,
-        ir_tx: Sender<Option<HIR>>,
-        token_rx: Receiver<LexerToken<'p>>,
+        ir_tx: Sender<Option<Chunk>>,
+        token_rx: Receiver<LexerToken>,
         notice_tx: Sender<Option<Notice>>,
     ) -> Result<(), String> {
         let mut parser = Parser::new(name, ir_tx, token_rx, notice_tx);

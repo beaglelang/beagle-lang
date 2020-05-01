@@ -1,16 +1,18 @@
 use ir::{
     hir::{
-        HIR,
-        HIRInstruction,
+        HIRInstruction
     },
     mir::{
-        MIR,
-        MIRInstruction
+        MIRInstructions,
     },
-    type_signature::{
-        TypeSignature,
-        PrimitiveType
-    }
+    Chunk,
+};
+
+use num_traits::FromPrimitive;
+
+use ir_traits::{
+    WriteInstruction,
+    ReadInstruction,
 };
 
 use std::{
@@ -31,17 +33,18 @@ use notices::{
 use core::pos::BiPos;
 
 struct MemmyElement{
-    hir: HIR,
+    bc_index: usize,
     count: usize,
-    refs: Vec<HIR>
+    //
+    refs: Vec<(String, usize)>
 }
 
 pub struct MemmyGenerator{
     module_name: String,
     symbol_table: Vec<MemmyElement>,
-    completed_mir: Vec<MIR>,
-    mir_tx: Sender<Option<MIR>>,
-    typeck_rx: Receiver<Option<HIR>>,
+    final_chunk: Chunk,
+    mir_tx: Sender<Option<Chunk>>,
+    typeck_rx: Receiver<Option<Chunk>>,
     notice_tx: Sender<Option<Notice>>
 }
 
@@ -65,255 +68,234 @@ impl MemmyGenerator{
         return Ok(())
     }
 
-    fn determine_alloc_size(&mut self, hir: HIR) -> Option<(usize, Option<MIR>)>{
-        match hir.sig{
-            TypeSignature::Primitive(t) => match t{
-                PrimitiveType::Float => Some((size_of::<f32>(), None)),
-                PrimitiveType::Integer => Some((size_of::<i32>(), None)),
-                PrimitiveType::Bool => Some((size_of::<bool>(), None)),
-                PrimitiveType::String => {
-                    let next_hir = self.typeck_rx.recv().unwrap().unwrap();
-                    return if let HIRInstruction::String(s) = next_hir.ins{
-                        let mir = MIR{
-                            pos: next_hir.pos,
-                            sig: next_hir.sig,
-                            ins: MIRInstruction::String(s.clone())
-                        };
-                        Some((s.len(), Some(mir)))
-                    }else{
-                        self.emit_error(format!("Failed to determine size of String object: Expected a String object but instead got {:?}", hir.ins), next_hir.pos).unwrap();
-                        None
-                    }
-                },
-                _ => {
-                    Some((size_of::<usize>(), None))
-                }
+    fn determine_alloc_size(&mut self, chunk: &mut Chunk) -> Option<(usize, Option<Chunk>)>{
+        let mut ret_chunk = Chunk::new();
+        let pos = chunk.read_pos();
+        match FromPrimitive::from_u8(chunk.get_current()){
+            Some(HIRInstruction::Float) => {
+                ret_chunk.write_instruction(MIRInstructions::Float);
+                Some((size_of::<f32>(), Some(ret_chunk)))
             },
-            TypeSignature::Untyped => {
-                self.emit_error("Found an untyped local, which is an illegal operation. This should not be happening. Please report this to the author.".to_string(), hir.pos).unwrap();
+            Some(HIRInstruction::Integer) => {
+                ret_chunk.write_instruction(MIRInstructions::Integer);
+                Some((size_of::<i32>(), Some(ret_chunk)))
+            },
+            Some(HIRInstruction::Bool) => 
+            {
+                ret_chunk.write_instruction(MIRInstructions::Bool);
+                Some((size_of::<bool>(), Some(ret_chunk)))
+            },
+            Some(HIRInstruction::String) => {
+                chunk.advance();
+                let name = chunk.read_string();
+                let mut new_chunk = Chunk::new();
+                new_chunk.write_instruction(MIRInstructions::String);
+                new_chunk.write_string(name.clone());
+                Some((name.len(), Some(new_chunk)))
+            },
+            Some(HIRInstruction::None) => {
+                self.emit_error("Found an untyped object, which is an illegal operation. This should not be happening. Please report this to the author.".to_string(), pos).unwrap();
                 None
             },
             _ => {
-                self.emit_error(format!("Found an unknown type signature: {:?}", hir.sig.clone()).to_string(), hir.pos).unwrap();
+                self.emit_error(format!("Found an unknown bytecode instruction: {:?}", chunk.get_current()).to_string(), pos).unwrap();
                 None
             }
         }
     }
 
-    fn convert_function_block(&mut self, hir: HIR) -> Result<(),()>{
-        let mut header = Vec::<MIR>::new();
-        let mut preallocs = Vec::<MIR>::new();
-        let mut other = Vec::<MIR>::new();
-        if let HIRInstruction::Fn(name) = hir.ins{
-            header.push(MIR{
-                pos: hir.pos,
-                sig: hir.sig,
-                ins: MIRInstruction::Fun(name)
-            });
-        }else{
-            self.emit_error("Failed to convert HIR function instruction to MIR function instruction.".to_string(), hir.pos)?;
+    fn hir_2_mir(&mut self, chunk: &mut Chunk) -> Result<Chunk, ()>{
+        let pos = chunk.read_pos();
+        let mut new_chunk = Chunk::new();
+        chunk.advance();
+        match FromPrimitive::from_u8(chunk.get_current()){
+            Some(HIRInstruction::Bool) => {
+                new_chunk.write_instruction(MIRInstructions::Bool);
+                chunk.advance();
+                let pos = chunk.read_pos();
+                new_chunk.write_pos(pos);
+                let value = chunk.read_bool();
+                new_chunk.write_bool(value);
+                chunk.advance();
+                let vpos = chunk.read_pos();
+                new_chunk.write_pos(vpos);
+            }
+            Some(HIRInstruction::Integer) => {
+                new_chunk.write_instruction(MIRInstructions::Integer);
+                chunk.advance();
+                let pos = chunk.read_pos();
+                new_chunk.write_pos(pos);
+                let value = chunk.read_int();
+                new_chunk.write_int(value);
+                chunk.advance();
+                let vpos = chunk.read_pos();
+                new_chunk.write_pos(vpos);
+            }
+            Some(HIRInstruction::Float) => {
+                new_chunk.write_instruction(MIRInstructions::Float);
+                chunk.advance();
+                let pos = chunk.read_pos();
+                new_chunk.write_pos(pos);
+                let value = chunk.read_float();
+                new_chunk.write_float(value);
+                chunk.advance();
+                let vpos = chunk.read_pos();
+                new_chunk.write_pos(vpos);
+            }
+            Some(HIRInstruction::String) => {
+                new_chunk.write_instruction(MIRInstructions::String);
+                chunk.advance();
+                let pos = chunk.read_pos();
+                new_chunk.write_pos(pos);
+                let value = chunk.read_string();
+                new_chunk.write_string(value);
+                chunk.advance();
+                let vpos = chunk.read_pos();
+                new_chunk.write_pos(vpos);
+            }
+            _ => {
+                self.emit_error(format!("Unexpected instruction: {}", chunk.get_current()), pos)?;
+            }
         }
+        Ok(new_chunk)
+    }
+
+    fn convert_function_block(&mut self, mut chunk: &mut Chunk) -> Result<(),()>{
+        let mut header = Chunk::new();
+        let mut preallocs = Chunk::new();
+        let mut other = Chunk::new();
+        if let Some(HIRInstruction::Fn) = FromPrimitive::from_u8(chunk.get_current()){
+            header.write_instruction(MIRInstructions::Fun);
+            chunk.advance();
+            let name = chunk.read_string();
+            header.write_string(name);
+        }else{
+            let pos = chunk.read_pos();
+            self.emit_error(format!("Expected an Fn HIR instruction, instead got {}", chunk.get_current()), pos)?;
+            return Err(())
+        }
+        let pos = chunk.read_pos();
+        header.write_pos(pos);
+        chunk.advance();
+        let name = chunk.read_string();
+        header.write_string(name);
+        chunk.advance();
         loop{
-            let next_hir = self.typeck_rx.recv().unwrap().unwrap();
-            match &next_hir.ins{
-                HIRInstruction::FnParam(name) => {
-                    header.push(
-                        MIR{
-                            pos: next_hir.pos,
-                            sig: next_hir.sig,
-                            ins: MIRInstruction::FunParam(name.clone())
-                        }
-                    )
+            let next = &chunk.get_current();
+            match FromPrimitive::from_u8(*next){
+                Some(HIRInstruction::FnParam) => {
+                    header.write_instruction(MIRInstructions::FunParam);
+                    chunk.advance();
+                    let name = chunk.read_string();
+                    header.write_string(name);
                 },
-                HIRInstruction::LocalVar(name, mutable) => {
-                    let size_clone = next_hir.clone();
-                    let size = if let Some(size) = self.determine_alloc_size(size_clone){
+                Some(HIRInstruction::LocalVar) => {
+                    chunk.advance();
+                    //Get the position of the let keyword
+                    let var_pos = chunk.read_pos();
+                    chunk.advance();
+                    //Get the anem
+                    let name = chunk.read_string();
+                    chunk.advance();
+                    //Get the position of the name
+                    let name_pos = chunk.read_pos();
+                    //Mutable flag
+                    let mutable = chunk.read_bool();
+                    chunk.advance();
+                    let mut_pos = chunk.read_pos();
+                    //Determine the size of the object being allocated
+                    let size = if let Some(size) = self.determine_alloc_size(chunk){
                         size
                     }else{
-                        let error_clone = next_hir.clone();
-                        self.emit_error("Failed to determine size of local object.".to_string(), error_clone.clone().pos)?;
+                        self.emit_error("Failed to determine size of local object.".to_string(), var_pos)?;
                         return Err(())
                     };
-                    let prealloc_clone = next_hir.clone();
-                    preallocs.push(
-                        MIR{
-                            pos: prealloc_clone.pos,
-                            sig: prealloc_clone.sig,
-                            ins: MIRInstruction::StackAlloc(name.clone(), size.0)
-                        }
-                    );
-                    let clone = next_hir.clone();
-                    other.push(
-                        MIR{
-                            pos: clone.pos,
-                            sig: clone.sig,
-                            ins: MIRInstruction::ObjInit(name.clone(), *mutable)
-                        }
-                    );
-                    if let Some(mir) = size.1{
-                        other.push(mir)
+                    
+                    preallocs.write_string(name.clone());
+                    preallocs.write_pos(name_pos);
+                    preallocs.write_instruction(MIRInstructions::StackAlloc);
+                    preallocs.write_usize(size.0);
+                    if let Some(chunk) = size.1{
+                        other.write_instruction(MIRInstructions::ObjInit);
+                        other.write_string(name);
+                        other.write_pos(name_pos);
+                        other.write_bool(mutable);
+                        other.write_pos(mut_pos);
+                        other.write_chunk(chunk);
                     }
                 },
-                HIRInstruction::Property(name, mutable) => {
-                    let size_clone = next_hir.clone();
-                    let size = if let Some(size) = self.determine_alloc_size(size_clone){
+                Some(HIRInstruction::Property) => {
+                    chunk.advance();
+                    //Get the position of the let keyword
+                    let var_pos = chunk.read_pos();
+                    chunk.advance();
+                    //Get the anem
+                    let name = chunk.read_string();
+                    chunk.advance();
+                    //Get the position of the name
+                    let name_pos = chunk.read_pos();
+                    //Mutable flag
+                    let mutable = chunk.read_bool();
+                    chunk.advance();
+                    let mut_pos = chunk.read_pos();
+                    //Determine the size of the object being allocated
+                    let size = if let Some(size) = self.determine_alloc_size(chunk){
                         size
                     }else{
-                        let error_clone = next_hir.clone();
-                        self.emit_error("Failed to determine size of local object.".to_string(), error_clone.pos)?;
+                        self.emit_error("Failed to determine size of property object.".to_string(), var_pos)?;
                         return Err(())
                     };
-                    let prealloc_clone = next_hir.clone();
-                    preallocs.push(
-                        MIR{
-                            pos: prealloc_clone.pos,
-                            sig: prealloc_clone.sig,
-                            ins: MIRInstruction::HeapAlloc(name.clone(), size.0)
-                        }
-                    );
-                    let clone = next_hir.clone();
-                    other.push(
-                        MIR{
-                            pos: clone.pos,
-                            sig: clone.sig,
-                            ins: MIRInstruction::ObjInit(name.clone(), *mutable)
-                        }
-                    );
-                    if let Some(mir) = size.1{
-                        other.push(mir)
+                    
+                    preallocs.write_string(name.clone());
+                    preallocs.write_pos(name_pos);
+                    preallocs.write_instruction(MIRInstructions::HeapAlloc);
+                    preallocs.write_usize(size.0);
+                    if let Some(chunk) = size.1{
+                        other.write_instruction(MIRInstructions::ObjInit);
+                        other.write_string(name);
+                        preallocs.write_pos(name_pos);
+                        other.write_bool(mutable);
+                        preallocs.write_pos(mut_pos);
+                        other.write_chunk(chunk);
                     }
                 },
-                HIRInstruction::EndFn => {
-                    other.push(MIR{
-                        pos: next_hir.pos,
-                        sig: next_hir.sig,
-                        ins: MIRInstruction::EndFun
-                    });
+                Some(HIRInstruction::EndFn) => {
+                    other.write_instruction(MIRInstructions::EndFun);
                     break;
                 },
                 _ => {
-                    other.push(MIR{
-                        pos: next_hir.pos,
-                        sig: next_hir.sig,
-                        ins: MIRInstruction::from_hir(next_hir.ins)
-                    });
+                    self.hir_2_mir(&mut chunk)?;
                 }
             }
         }
-        for mir in header{
-            self.completed_mir.push(mir)
-        }
-        for mir in preallocs{
-            self.completed_mir.push(mir)
-        }
-        for mir in other{
-            self.completed_mir.push(mir)
-        }
+        self.final_chunk.write_chunk(header);
+        self.final_chunk.write_chunk(preallocs);
+        self.final_chunk.write_chunk(other);
         Ok(())
     }
 
     fn check_and_sort(&mut self) -> Result<(),()>{
         loop{
-            let hir = if let Ok(Some(ir)) = self.typeck_rx.recv(){
-                ir
+            let mut chunk = if let Ok(Some(chunk)) = self.typeck_rx.recv(){
+                chunk
             }else{
                 break
             };
-            match &hir.clone().ins{
-                HIRInstruction::Module(s) => self.completed_mir.push(MIR{
-                    pos: hir.pos,
-                    sig: hir.sig,
-                    ins: MIRInstruction::Module(s.clone())
-                }),
-                HIRInstruction::EndModule => self.completed_mir.push(MIR{
-                    pos: hir.pos,
-                    sig: hir.sig,
-                    ins: MIRInstruction::EndModule
-                }),
-                HIRInstruction::Fn(s) => if let Err(()) = self.convert_function_block(hir){
-                    return Err(())
-                }
-                HIRInstruction::Integer(s) => {
-                    self.completed_mir.push(MIR{
-                        pos: hir.pos,
-                        sig: hir.sig,
-                        ins: MIRInstruction::Integer(*s)
-                    })
-                },
-                HIRInstruction::Float(f) => {
-                    self.completed_mir.push(MIR{
-                        pos: hir.pos,
-                        sig: hir.sig,
-                        ins: MIRInstruction::Float(*f)
-                    })
-                },
-                HIRInstruction::String(s) => {
-                    self.completed_mir.push(MIR{
-                        pos: hir.pos,
-                        sig: hir.sig,
-                        ins: MIRInstruction::String(s.clone())
-                    })
-                },
-                HIRInstruction::Bool(b) => {
-                    self.completed_mir.push(MIR{
-                        pos: hir.pos,
-                        sig: hir.sig,
-                        ins: MIRInstruction::Bool(*b)
-                    })
-                },
-                HIRInstruction::Property(name, mutable) => {
-                    let hir_clone = hir.clone();
-                    let size = if let Some(size) = self.determine_alloc_size(hir_clone){
-                        size
-                    }else{
-                        let error_clone = hir.clone();
-                        self.emit_error("Failed to determine size of property.".to_string(), error_clone.pos)?;
-                        return Err(())
-                    };
-                    let alloc_hir_clone = hir.clone();
-                    self.completed_mir.push(MIR{
-                        pos: alloc_hir_clone.pos,
-                        sig: alloc_hir_clone.sig,
-                        ins: MIRInstruction::HeapAlloc(name.clone(), size.0)
-                    });
-                    let obj_clone = hir.clone();
-                    self.completed_mir.push(MIR{
-                        pos: obj_clone.pos,
-                        sig: obj_clone.sig,
-                        ins: MIRInstruction::ObjInit(name.clone(), *mutable)
-                    });
-                    if let Some(mir) = size.1{
-                        self.completed_mir.push(mir)
-                    }
-                },
-                HIRInstruction::Halt => {
-                    self.completed_mir.push(MIR{
-                        pos: hir.pos,
-                        sig: hir.sig,
-                        ins: MIRInstruction::Halt
-                    });
-                    break
-                }
-                _ => {
-                    self.emit_error(format!("Unrecognized element: {:?}", hir), hir.pos)?;
-                    return Err(())
-                }
-            };
+            let mir = self.hir_2_mir(&mut chunk).unwrap();
+            self.final_chunk.write_chunk(mir);
         }
-        for ir in self.completed_mir.to_vec(){
-            self.mir_tx.send(Some(ir)).unwrap();
-        }
+        self.mir_tx.send(Some(self.final_chunk.clone())).unwrap();
         Ok(())
     }
 
-    pub async fn start(module_name: String, mir_tx: Sender<Option<MIR>>, notice_tx: Sender<Option<Notice>>, typeck_rx: Receiver<Option<HIR>>) -> Result<(),()>{
+    pub async fn start(module_name: String, mir_tx: Sender<Option<Chunk>>, notice_tx: Sender<Option<Notice>>, typeck_rx: Receiver<Option<Chunk>>) -> Result<(),()>{
         let mut memmy = Self{
             module_name,
             symbol_table: Vec::new(),
-            completed_mir: Vec::new(),
             mir_tx,
             notice_tx,
             typeck_rx,
+            final_chunk: Chunk::new(),
         };
         if memmy.check_and_sort().is_err(){
             return Err(())

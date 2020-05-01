@@ -11,3 +11,7 @@ ir = { path = "../ir", version = "*" }
 notices = { path = "../notices", version = "*" }
 core = { path = "../core", version = "*" }
 futures = { version = "*", features = ["thread-pool"] }
+num-traits = "0.2"
+num-derive = "0.2"
+ir_traits = { path = "../ir_traits", version = "*" }
+ir_derive = { path = "../ir_derive", version = "*" }

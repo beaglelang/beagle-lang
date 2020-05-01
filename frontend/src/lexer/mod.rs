@@ -54,11 +54,12 @@ impl LexerManager{
         }
     }
 
-    pub fn enqueue_module(&self, module_name: String, input: &'static str, parser_tx: Sender<LexerToken<'static>>){
+    pub fn enqueue_module(&self, module_name: String, input: String, parser_tx: Sender<LexerToken>){
         let notice_tx_clone = self.notice_tx.clone();
         let parser_tx_clone = parser_tx.clone();
+        let input_clone = input.clone();
         self.thread_pool.spawn_ok(async move{
-            let lexer_result = Lexer::new(input.clone(), Arc::new(Mutex::new(parser_tx_clone)));
+            let lexer_result = Lexer::new(input_clone, Arc::new(Mutex::new(parser_tx_clone)));
             let mut lexer = if let Ok(l) = lexer_result{
                 l
             }else{
@@ -87,24 +88,24 @@ impl LexerManager{
     }
 }
 
-pub struct Lexer<'a> {
-    input: &'a str,
-    source: Option<&'a str>,
+pub struct Lexer {
+    input: String,
+    source: Option<String>,
     char_idx: usize,
     current_pos: BiPos,
 
-    pub token_sender: Arc<Mutex<Sender<tokens::LexerToken<'a>>>>,
+    pub token_sender: Arc<Mutex<Sender<tokens::LexerToken>>>,
 }
 
-impl<'a> Lexer<'a> {
+impl<'a, 'b> Lexer{
     pub fn new(
-        input: &'a str,
-        token_tx: Arc<Mutex<Sender<LexerToken<'a>>>>,
-    ) -> Result<Box<Lexer<'a>>> {
+        input: String,
+        token_tx: Arc<Mutex<Sender<LexerToken>>>,
+    ) -> Result<Box<Lexer>> {
         let input_str = input.clone();
         let lexer = Box::new(Lexer {
             input: input_str.clone(),
-            source: Some(input_str.clone()),
+            source: Some(input_str),
             char_idx: 0,
             current_pos: BiPos::default(),
             token_sender: token_tx,
@@ -113,12 +114,12 @@ impl<'a> Lexer<'a> {
     }
 
     fn advance_end(&mut self) -> Option<char> {
-        match self.source{
+        match &self.source{
             Some(src) => {
                 let mut chars = src.chars();
                 let new_c = chars.next();
                 self.char_idx += 1;
-                self.source = Some(chars.as_str());
+                self.source = Some(chars.as_str().to_string());
                 match new_c {
                     Some(c) if c.is_whitespace() => {
                         self.current_pos.next_col_end();
@@ -138,19 +139,19 @@ impl<'a> Lexer<'a> {
     }
 
     fn peek(&mut self) -> Option<char>{
-        match self.source{
+        match &self.source{
             Some(src) => src.chars().next(),
             None => None
         }
     }
 
     fn advance(&mut self) -> Option<char> {
-        match self.source{
+        match &self.source{
             Some(src) => {
                 let mut chars = src.chars();
                 let new_c = chars.next();
                 self.char_idx += 1;
-                self.source = Some(chars.as_str());
+                self.source = Some(chars.as_str().to_string());
                 match new_c {
                     Some(c) if c.is_whitespace() => {
                         self.current_pos.next_col();
@@ -213,7 +214,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn number(&mut self) -> Option<tokens::LexerToken<'a>> {
+    fn number(&mut self) -> Option<tokens::LexerToken> {
         let start_idx = self.char_idx;
         let mut is_float = false;
         while let Some(c) = self.peek() {
@@ -242,7 +243,7 @@ impl<'a> Lexer<'a> {
         Some(tokens::LexerToken {
             type_: tokens::TokenType::Number,
             data: if is_float {
-                tokens::TokenData::Float(match number.parse::<f64>() {
+                tokens::TokenData::Float(match number.parse::<f32>() {
                     Ok(f) => f,
                     Err(e) => {
                         return Some(tokens::LexerToken {
@@ -256,7 +257,7 @@ impl<'a> Lexer<'a> {
                     }
                 })
             } else {
-                tokens::TokenData::Integer(match number.parse::<isize>() {
+                tokens::TokenData::Integer(match number.parse::<i32>() {
                     Ok(f) => f,
                     Err(e) => {
                         return Some(tokens::LexerToken {
@@ -275,7 +276,7 @@ impl<'a> Lexer<'a> {
     }
 
     #[inline]
-    fn string(&mut self) -> Option<tokens::LexerToken<'a>> {
+    fn string(&mut self) -> Option<tokens::LexerToken> {
         let start_idx = self.char_idx;
         self.advance().unwrap();
         while let Some(c) = self.advance_end() {
@@ -291,7 +292,7 @@ impl<'a> Lexer<'a> {
             None => {
                 return Some(tokens::LexerToken {
                     type_: tokens::TokenType::Err,
-                    data: tokens::TokenData::Str("Failed to extract string from input source."),
+                    data: tokens::TokenData::String("Failed to extract string from input source.".to_string()),
                     pos: self.current_pos,
                 })
             }
@@ -299,7 +300,7 @@ impl<'a> Lexer<'a> {
 
         Some(tokens::LexerToken {
             type_: tokens::TokenType::String,
-            data: tokens::TokenData::Str(slice),
+            data: tokens::TokenData::String(slice.to_owned()),
             pos: self.current_pos,
         })
     }
@@ -318,7 +319,7 @@ impl<'a> Lexer<'a> {
         self.current_pos.start = self.current_pos.end;
     }
 
-    fn get_token(&mut self) -> Option<tokens::LexerToken<'a>> {
+    fn get_token(&mut self) -> Option<tokens::LexerToken> {
         self.skip_whitespace();
         match self.advance() {
             Some(c) => {
@@ -339,7 +340,7 @@ impl<'a> Lexer<'a> {
                         let type_ = self.is_keyword(identifier);
                         return Some(tokens::LexerToken {
                             type_,
-                            data: tokens::TokenData::Str(identifier),
+                            data: tokens::TokenData::String(identifier.to_string()),
                             pos: self.current_pos,
                         });
                     }
@@ -369,7 +370,7 @@ impl<'a> Lexer<'a> {
                     _ => {
                         return Some(tokens::LexerToken {
                             type_: tokens::TokenType::Err,
-                            data: tokens::TokenData::Str("Invalid character"),
+                            data: tokens::TokenData::String(format!("Invalid character")),
                             pos: self.current_pos,
                         })
                     }
@@ -384,8 +385,8 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn start_tokenizing(&mut self) -> std::result::Result<(), String> {
-        let sender_arc = self.token_sender.clone();
-        let guard = self.token_sender.lock().unwrap();
+        let token_sender_clone = self.token_sender.clone();
+        let guard = token_sender_clone.lock().unwrap();
         loop {
             let token = self.get_token();
             match token {

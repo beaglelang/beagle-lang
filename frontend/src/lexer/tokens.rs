@@ -79,22 +79,21 @@ pub enum TokenType {
 }
 
 #[derive(Debug, Clone)]
-pub enum TokenData<'a> {
+pub enum TokenData {
     None,
-    Integer(isize),
-    Float(f64),
-    Str(&'a str),
+    Integer(i32),
+    Float(f32),
     String(String),
 }
 
 #[derive(Debug, Clone)]
-pub struct LexerToken<'a> {
+pub struct LexerToken{
     pub type_: TokenType,
-    pub data: TokenData<'a>,
+    pub data: TokenData,
     pub pos: BiPos,
 }
 
-impl<'a> Default for LexerToken<'a> {
+impl Default for LexerToken {
     fn default() -> Self {
         LexerToken {
             type_: TokenType::Eof,
@@ -104,7 +103,7 @@ impl<'a> Default for LexerToken<'a> {
     }
 }
 
-impl<'a> std::fmt::Display for LexerToken<'a> {
+impl std::fmt::Display for LexerToken{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?},\n\t{:?},\n\t{}", self.type_, self.data, self.pos)
     }

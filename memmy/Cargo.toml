@@ -10,3 +10,6 @@ edition = "2018"
 ir = { path = "../ir", version = "*" }
 core = { path = "../core", version = "*" }
 notices = { path = "../notices", version = "*" }
+num-traits = "0.2"
+num-derive = "0.2"
+ir_traits = { path = "../ir_traits", version = "*" }

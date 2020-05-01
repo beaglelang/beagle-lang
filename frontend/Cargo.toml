@@ -15,3 +15,5 @@ notices = { path = "../notices", version = "*" }
 typeck = { path = "../typeck", version = "*" }
 memmy = { path = "../memmy", version = "*" }
 symbol_table = { path = "../symbol_table", version = "*" }
+ir_derive = { path = "../ir_derive" }
+ir_traits = { path = "../ir_traits" }

@@ -1,19 +1,20 @@
 use ir::{
-    type_signature::{
-        TypeSignature,
-        PrimitiveType,
-    },
     hir::{
-        HIR,
         HIRInstruction
     },
+    Chunk,
 };
+
 use notices::*;
 use std::sync::{
     mpsc::{
         Sender, Receiver
     },
-    Arc, Mutex
+};
+
+use ir_traits::{
+    ReadInstruction,
+    WriteInstruction,
 };
 
 use futures::executor::ThreadPool;
@@ -33,12 +34,12 @@ impl TypeckManager{
         }
     }
 
-    pub fn enqueue_module(&self, module_name: String, hir_rx: Receiver<Option<HIR>>, typeck_tx: Sender<Option<HIR>>){
+    pub fn enqueue_module(&self, module_name: String, hir_rx: Receiver<Option<Chunk>>, typeck_tx: Sender<Option<Chunk>>){
         let notice_tx_clone = self.notice_tx.clone();
         let module_name_clone = module_name.clone();
         self.thread_pool.spawn_ok(async move{
-            let parser = Typeck::start_checking(module_name_clone.clone(), hir_rx, notice_tx_clone.clone(), typeck_tx);
-            if let Err(msg) = parser{
+            let typeck = Typeck::start_checking(module_name_clone.clone(), hir_rx, notice_tx_clone.clone(), typeck_tx);
+            if let Err(msg) = typeck{
                 let notice = Notice{
                     from: "Typeck".to_string(),
                     file: module_name_clone,
@@ -54,28 +55,13 @@ impl TypeckManager{
 
 pub struct Typeck{
     module_name: String,
-    ir_stack: Vec<HIR>,
-    ir_rx: Receiver<Option<HIR>>,
+    chunk_rx: Receiver<Option<Chunk>>,
     notice_tx: Sender<Option<Notice>>,
-    typeck_tx: Sender<Option<HIR>>,
+    typeck_tx: Sender<Option<Chunk>>,
 }
 
 impl Typeck{
     fn emit_notice(&mut self, msg: String, level: NoticeLevel, pos: Position) -> Result<(),()>{
-        if level == NoticeLevel::Error{
-            if self.notice_tx.send(
-                Some(notices::Notice{
-                    from: "Type checker came back with an error.".to_string(),
-                    msg: msg.clone(),
-                    file: self.module_name.clone(),
-                    level,
-                    pos
-                })
-            ).is_err(){
-                return Err(())
-            }
-
-        }
         if self.notice_tx.send(
             Some(notices::Notice{
                 from: "Type checker".to_string(),
@@ -90,179 +76,89 @@ impl Typeck{
         Ok(())
     }
 
-    fn cmp_types(&mut self) -> Result<(), ()>{
-        Ok(())
+    ///We need to keep track of the expression chunk and return it after we type check it.
+    fn check_expression(&mut self, mut chunk: Chunk) -> Result<Chunk,()>{
+        let pos = chunk.read_pos();
+        let mut ret_chunk = Chunk::new();
+        loop{
+            let current = chunk.read_instruction();
+            let next = chunk.read_instruction();
+            if next != current{
+                self.emit_notice(format!("Expected a value of type {:?} but instead got {:?}", current, next), NoticeLevel::Error, pos)?;
+                return Err(())
+            }
+            match &current {
+                Some(HIRInstruction::Bool) => {
+                    ret_chunk.write_instruction(current.unwrap());
+                    let value = chunk.read_bool();
+                    ret_chunk.write_bool(value);
+                }
+                Some(HIRInstruction::Integer) => {
+                    ret_chunk.write_instruction(current.unwrap());
+                    let value = chunk.read_int();
+                    ret_chunk.write_int(value);
+                }
+                Some(HIRInstruction::Float) => {
+                    ret_chunk.write_instruction(current.unwrap());
+                    let value = chunk.read_float();
+                    ret_chunk.write_float(value);
+                }
+                Some(HIRInstruction::String) => {
+                    ret_chunk.write_instruction(current.unwrap());
+                    let value = chunk.read_string();
+                    ret_chunk.write_string(value);
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+        Ok(ret_chunk)
     }
 
     fn check(&mut self) -> Result<(),()>{
         loop{
-            let ir = if let Ok(Some(ir)) = self.ir_rx.recv(){
-                ir
+            let mut chunk = if let Ok(Some(chunk)) = self.chunk_rx.recv(){
+                chunk
             }else{
                 return Ok(())
             };
-            let ir_clone = ir.clone();
-            let ins = ir.ins;
-            if ins == HIRInstruction::Halt{
-                self.typeck_tx.send(Some(ir_clone)).unwrap();
-                break
-            }
-            let sig = ir.sig.clone();
-            match &sig{
-                TypeSignature::Primitive(p) => {
-                    match ins{
-                        HIRInstruction::FnParam(_) => self.ir_stack.push(ir_clone),
-                        _ => {
-                            let next_ir = if let Ok(Some(ir)) = self.ir_rx.recv(){
-                                ir
-                            }else{
-                                return Ok(())
-                            };
-                            match p{
-                                PrimitiveType::Integer => {
-                                    match ins{
-                                        HIRInstruction::Integer(_) => self.ir_stack.push(HIR{
-                                            pos: ir.pos.clone(),
-                                            sig,
-                                            ins
-                                        }),
-                                        _ => {
-                                            if self.emit_notice(
-                                                format!("Expected an expression of type Integer but instead got {:?}", next_ir.sig),
-                                                NoticeLevel::Error,
-                                                ir.pos
-                                            ).is_err(){
-                                                return Err(())
-                                            }
-                                            return Err(())
-        
-                                        }
-                                    };
-                                },
-                                PrimitiveType::Float => {
-                                    match ins{
-                                        HIRInstruction::Float(_) => self.ir_stack.push(HIR{
-                                            pos: ir.pos.clone(),
-                                            sig,
-                                            ins
-                                        }),
-                                        _ => {
-                                            if self.emit_notice(
-                                                format!("Expected an expression of type Float but instead got {:?}", next_ir.sig),
-                                                NoticeLevel::Error,
-                                                ir.pos
-                                            ).is_err(){
-                                                return Err(())
-                                            }
-                                            return Err(())
-        
-                                        }
-                                    };
-                                },
-                                PrimitiveType::String => {
-                                    match ins{
-                                        HIRInstruction::String(_) => self.ir_stack.push(HIR{
-                                            pos: ir.pos.clone(),
-                                            sig,
-                                            ins
-                                        }),
-                                        _ => {
-                                            if self.emit_notice(
-                                                format!("Expected an expression of type String but instead got {:?}", next_ir.sig),
-                                                NoticeLevel::Error,
-                                                ir.pos
-                                            ).is_err(){
-                                                return Err(())
-                                            }
-                                            return Err(())
-                                        }
-                                    };
-                                }
-                                _ => {
-                                    if self.emit_notice(
-                                        format!("Unexpected type: {:?}", next_ir.sig),
-                                        NoticeLevel::Error,
-                                        ir.pos
-                                    ).is_err(){
-                                        return Err(())
-                                    }
-                                    return Err(())
-        
-                                }
-                            }
-                        }
-                    }
+            let ins = chunk.read_instruction();
+            match &ins{
+                Some(HIRInstruction::Property) => {
+                    chunk.advance();
+                    let pos = chunk.read_pos();
+                    chunk.advance();
+                    let name = chunk.read_string();
+                    chunk.advance();
+                    let mutable = chunk.read_bool();
+                    chunk.advance();
+                    let value_chunk = self.check_expression(chunk)?;
+                    let mut new_chunk = Chunk::new();
+                    new_chunk.write_instruction(ins.unwrap());
+                    new_chunk.write_pos(pos);
+                    new_chunk.write_string(name);
+                    new_chunk.write_bool(mutable);
+                    new_chunk.write_chunk(value_chunk);
+                    self.typeck_tx.send(Some(new_chunk)).unwrap();
                 },
-                TypeSignature::Untyped => {
-                    let next_ir = if let Ok(Some(ir)) = self.ir_rx.recv(){
-                        ir
-                    }else{
-                        return Ok(())
-                    };
-                    match &next_ir.ins{
-                        HIRInstruction::Integer(_) => {
-                            self.ir_stack.push(HIR{
-                                pos: ir.pos,
-                                sig: TypeSignature::Primitive(PrimitiveType::Integer),
-                                ins
-                            });
-                        },
-                        HIRInstruction::Float(_) => {
-                            self.ir_stack.push(HIR{
-                                pos: ir.pos,
-                                sig: TypeSignature::Primitive(PrimitiveType::String),
-                                ins
-                            });
-                        },
-                        HIRInstruction::String(_) => {
-                            self.ir_stack.push(HIR{
-                                pos: ir.pos,
-                                sig: TypeSignature::Primitive(PrimitiveType::String),
-                                ins
-                            });
-                        }
-                        HIRInstruction::Bool(_) => {
-                            self.ir_stack.push(HIR{
-                                pos: ir.pos,
-                                sig: TypeSignature::Primitive(PrimitiveType::Bool),
-                                ins
-                            });
-                        }
-                        _ => {
-                            self.ir_stack.push(HIR{
-                                pos: ir.pos,
-                                sig: TypeSignature::Primitive(PrimitiveType::Unit),
-                                ins
-                            });
-                        }
-                    }
-                    self.ir_stack.push(next_ir);
-                },
-                _ => self.ir_stack.push(ir_clone)
+                Some(_) => return Ok(()),
+                None => return Err(())
             }
         }
-        Ok(())
     }
 
-    pub fn start_checking(module_name: String, ir_rx: Receiver<Option<HIR>>, notice_tx: Sender<Option<Notice>>, typeck_tx: Sender<Option<HIR>>) -> Result<(), String>{
+    pub fn start_checking(module_name: String, ir_rx: Receiver<Option<Chunk>>, notice_tx: Sender<Option<Notice>>, typeck_tx: Sender<Option<Chunk>>) -> Result<(), String>{
         let mut typeck = Self{
             module_name: module_name.clone(),
-            ir_stack: Vec::new(),
-            ir_rx,
             notice_tx,
-            typeck_tx
+            typeck_tx,
+            chunk_rx: ir_rx
         };
 
         if typeck.check().is_err(){
             return Ok(())
-        }
-
-        for ir in typeck.ir_stack{
-            if let Err(_) = typeck.typeck_tx.send(Some(ir)){
-                return Err(format!("Failed to send type checked ir for module '{}' because the IR channel was expected to be open but is instead closed.", module_name.clone()))
-            }
-        }
-        
+        }        
         
         Ok(())
     }

@@ -9,3 +9,9 @@ edition = "2018"
 [dependencies]
 serde = { version = "*", features = ["derive"] }
 core = { path = "../core", version = "*" }
+num-traits = "0.2"
+num-derive = "0.2"
+syn = "1.0"
+quote = "1.0"
+ir_derive = { path = "../ir_derive" }
+ir_traits = { path = "../ir_traits" }

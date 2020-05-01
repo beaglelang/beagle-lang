@@ -1,54 +1,55 @@
 use crate::{
-    parser::{functions, rules, ParseContext},
-    tokens::{LexerToken, TokenData, TokenType},
+    parser::{ParseContext},
+    tokens::{TokenData, TokenType},
     Parser,
 };
 
 use ir::{
     hir::{
-        HIR,
         HIRInstruction
     },
-    type_signature::{PrimitiveType, TypeSignature},
+    Chunk,
 };
 
-use core::pos::BiPos as Position;
+use ir_traits::{
+    WriteInstruction
+};
+
 use notices::NoticeLevel;
 
-type IRError = Result<(), ()>;
+type ParseResult = Result<(), ()>;
+type ChunkResult = Result<Chunk, ()>;
 
-pub(crate) fn nil_func<'a>(p: &mut Parser<'a>) -> IRError {
-    panic!("This is a placehold func for parse rules. This represents a null pointer function. This should not have been called.")
-}
-
-pub fn module<'a>(p: &mut Parser<'a>) -> IRError {
-    p.emit_ir(
-        Position::default(),
-        TypeSignature::None,
-        HIRInstruction::Module(p.name.clone()),
-    );
+pub fn module(p: &mut Parser) -> ParseResult {
+    let mut chunk = Chunk::new();
+    chunk.write_instruction(HIRInstruction::Module);
+    chunk.write_string(p.name.clone());
+    p.emit_ir_whole(chunk);
     while !p.check(TokenType::Eof) {
         if let Err(()) = declaration_or_statement(p) {
             return Err(());
         }
         // p.advance().unwrap();
     }
-    p.emit_ir(Position::default(), TypeSignature::None, HIRInstruction::EndModule);
+    let mut end_chunk = Chunk::new();
+    end_chunk.write_instruction(HIRInstruction::EndModule);
+    end_chunk.write_string(p.name.clone());
+    p.emit_ir_whole(end_chunk);
     Ok(())
 }
 
-pub(crate) fn declaration_or_statement<'a>(p: &mut Parser<'a>) -> IRError {
+pub(crate) fn declaration_or_statement(p: &mut Parser) -> ParseResult {
     match p.current_token().type_ {
         TokenType::KwMod => mod_declaration(p),
         _ => statement(p),
     }
 }
 
-pub(crate) fn mod_declaration<'a>(p: &mut Parser<'a>) -> IRError {
+pub(crate) fn mod_declaration(p: &mut Parser) -> ParseResult {
     Ok(())
 }
 
-pub(crate) fn statement<'a>(p: &mut Parser<'a>) -> IRError {
+pub(crate) fn statement(p: &mut Parser) -> ParseResult {
     let token = p.current_token();
     match token.type_ {
         TokenType::KwVal => property(p)?,
@@ -66,8 +67,11 @@ pub(crate) fn statement<'a>(p: &mut Parser<'a>) -> IRError {
     Ok(())
 }
 
-pub(crate) fn property<'a>(p: &mut Parser<'a>) -> IRError {
+pub(crate) fn property(p: &mut Parser) -> ParseResult {
+    let mut chunk = Chunk::new();
+    chunk.write_instruction(HIRInstruction::Property);
     let lpos = p.current_token().pos;
+    chunk.write_pos(lpos);
     let mutable = if !p.check(TokenType::KwVal) {
         if !p.check(TokenType::KwVar){
             let message = format!(
@@ -81,6 +85,7 @@ pub(crate) fn property<'a>(p: &mut Parser<'a>) -> IRError {
     }else{
         false
     };
+    chunk.write_bool(mutable);
     p.advance().unwrap();
     if !p.check(TokenType::Identifier) {
         let message = format!(
@@ -90,8 +95,8 @@ pub(crate) fn property<'a>(p: &mut Parser<'a>) -> IRError {
         p.emit_notice(lpos, NoticeLevel::Error, message);
         return Err(());
     }
-    let name = match p.current_token().data {
-        TokenData::Str(s) => (*s).to_string(),
+    let name = match &p.current_token().data {
+        TokenData::String(s) => (*s).to_string(),
         _ => {
             p.emit_notice(
                 lpos,
@@ -101,9 +106,11 @@ pub(crate) fn property<'a>(p: &mut Parser<'a>) -> IRError {
             return Err(());
         }
     };
-    let signature = if p.check_consume(TokenType::Colon) {
+    chunk.write_string(name);
+    chunk.write_bool(mutable);
+    if p.check_consume(TokenType::Colon) {
         if let Ok(t) = type_(p){
-            t
+            chunk.write_chunk(t);
         }else{
             p.emit_notice(p.prev_token().pos, NoticeLevel::Error, "Could not create type signature for property.".to_string());
             return Err(())
@@ -111,7 +118,7 @@ pub(crate) fn property<'a>(p: &mut Parser<'a>) -> IRError {
     } else {
         p.advance()
             .expect("Failed to advance parser to next token.");
-        TypeSignature::Untyped
+        chunk.write_str("Unknown");
     };
 
     if !p.check_consume(TokenType::Equal) {
@@ -124,7 +131,6 @@ pub(crate) fn property<'a>(p: &mut Parser<'a>) -> IRError {
         let data = match &found_token.data {
             TokenData::Float(f) => f.to_string(),
             TokenData::Integer(i) => i.to_string(),
-            TokenData::Str(s) => (*s).to_string(),
             TokenData::String(s) => s.clone(),
             _ => "Unknown".to_string(),
         };
@@ -135,12 +141,15 @@ pub(crate) fn property<'a>(p: &mut Parser<'a>) -> IRError {
         );
         return Err(());
     }
-    p.emit_ir(lpos, signature, HIRInstruction::Property(name, mutable));
+
+    p.emit_ir_whole(chunk);
+    
     expression(p).expect("Could not parse expression.");
     Ok(())
 }
 
-pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
+pub(crate) fn function(p: &mut Parser) -> ParseResult {
+    let mut chunk = Chunk::new();
     let lpos = p.current_token().pos;
     if !p.check_consume(TokenType::KwFun) {
         let message = format!(
@@ -150,6 +159,8 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
         p.emit_notice(lpos, NoticeLevel::Error, message);
         return Err(());
     }
+    chunk.write_instruction(HIRInstruction::Fn);
+    chunk.write_pos(lpos.clone());
     if !p.check(TokenType::Identifier) {
         let message = format!(
             "Expected an identifier token, but instead got {}",
@@ -158,8 +169,8 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
         p.emit_notice(lpos, NoticeLevel::Error, message);
         return Err(());
     }
-    let name = match p.current_token().data {
-        TokenData::Str(s) => (*s).to_string(),
+    let name = match &p.current_token().data {
+        TokenData::String(s) => (*s).to_string(),
         _ => {
             p.emit_notice(
                 lpos,
@@ -169,20 +180,20 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
             return Err(());
         }
     };
+    chunk.write_string(name);
     if p.advance().is_err(){
         return Err(())
     }
-    let mut params = Vec::<TypeSignature>::new();
-    let mut param_ir = Vec::<ir::hir::HIR>::new();
     if p.check(TokenType::LParen){
-        
         loop{
+            let mut param_chunk = Chunk::new();
+            param_chunk.write_instruction(HIRInstruction::FnParam);
             if p.check(TokenType::RParen){
                 break;
             }
             let loc = p.next_token().pos;
             let param_name = match p.consume(TokenType::Identifier).unwrap() {
-                TokenData::Str(s) => (*s).to_string(),
+                TokenData::String(s) => (*s).to_string(),
                 _ => {
                     p.emit_notice(
                         lpos,
@@ -192,9 +203,10 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
                     return Err(());
                 }
             };
+            param_chunk.write_string(param_name);
             let _ = p.consume(TokenType::Colon);
             let param_typename = match p.consume(TokenType::Identifier).unwrap() {
-                TokenData::Str(s) => (*s).to_string(),
+                TokenData::String(s) => (*s).to_string(),
                 _ => {
                     p.emit_notice(
                         lpos,
@@ -204,19 +216,15 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
                     return Err(());
                 }
             };
-            let type_sig = ir::type_signature::TypeSignature::Primitive(PrimitiveType::new(param_typename.as_str()));
-            params.push(type_sig.clone());
-            param_ir.push(ir::hir::HIR{
-                pos: loc,
-                sig: type_sig,
-                ins: HIRInstruction::FnParam(param_name)
-            });
+            param_chunk.write_string(param_typename);
+            param_chunk.write_pos(loc);
+            chunk.write_chunk(param_chunk);
             p.advance().unwrap();
         }
     }
     let typename = if p.check_consume_next(TokenType::Colon){
         match p.consume(TokenType::Identifier).unwrap() {
-            TokenData::Str(s) => (*s).to_string(),
+            TokenData::String(s) => (*s).to_string(),
             _ => {
                 p.emit_notice(
                     lpos,
@@ -229,39 +237,33 @@ pub(crate) fn function<'a>(p: &mut Parser<'a>) -> IRError {
     }else{
         "Unit".to_string()
     };
-    let function_sig = ir::type_signature::TypeSignature::Function(ir::type_signature::FunctionSignature{
-        parameters: params,
-        return_type_signature: Box::new(TypeSignature::Primitive(PrimitiveType::new(typename.as_str())))
-    });
-    let hir = HIR{
-        pos: lpos,
-        sig: function_sig,
-        ins: HIRInstruction::Fn(name.clone())
-    };
-    p.emit_ir_whole(hir);
-    for ir in param_ir{
-        p.emit_ir_whole(ir.clone());
-        if let HIRInstruction::FnParam(param_name) = &ir.ins{
-            p.symbols.push_local(name.clone(), param_name.clone(), ir.clone())
-        }
-    }
+
+    chunk.write_string(typename);
+
     if p.consume(TokenType::LCurly).is_err(){
         return Err(())
     }
 
     p.context = ParseContext::Local;
     
+    let mut body_chunk = Chunk::new();
+    body_chunk.write_instruction(HIRInstruction::Block);
+    body_chunk.write_pos(p.current_token().pos);
+    p.emit_ir_whole(body_chunk);
     while !p.check_consume(TokenType::RCurly){
         if local_statements(p).is_err(){
             return Err(())
         }
     }
-    p.emit_ir(lpos, TypeSignature::None, ir::hir::HIRInstruction::EndFn);
+    let mut end_chunk = Chunk::new();
+    end_chunk.write_instruction(HIRInstruction::EndBlock);
+    end_chunk.write_pos(p.prev_token().pos);
+    end_chunk.write_instruction(HIRInstruction::EndFn);
 
     Ok(())
 }
 
-pub(crate) fn local_statements<'a>(p: &mut Parser<'a>) -> IRError{
+pub(crate) fn local_statements(p: &mut Parser) -> ParseResult{
     p.advance().unwrap();
     match p.current_token().type_{
         TokenType::RCurly => return Ok(()),
@@ -278,7 +280,8 @@ pub(crate) fn local_statements<'a>(p: &mut Parser<'a>) -> IRError{
     Ok(())
 }
 
-pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
+pub(crate) fn local_var(p: &mut Parser) -> ParseResult {
+    let mut chunk = Chunk::new();
     if p.context != ParseContext::Local{
         p.emit_notice(p.current_token().pos, NoticeLevel::Error, "Found 'let' outside of local context.".to_string());
         return Err(())
@@ -290,7 +293,9 @@ pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
             "Expected keyword 'let' for defining an local variable.".to_string(),
         );
     }
+    chunk.write_instruction(HIRInstruction::LocalVar);
     let pos = p.current_token().pos;
+    chunk.write_pos(pos);
     if !p.check(TokenType::Identifier) {
         let message = format!(
             "Expected an identifier token, but instead got {}",
@@ -299,8 +304,8 @@ pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
         p.emit_notice(pos, NoticeLevel::Error, message);
         return Err(());
     }
-    let name = match p.current_token().data {
-        TokenData::Str(s) => (*s).to_string(),
+    let name = match &p.current_token().data {
+        TokenData::String(s) => (*s).to_string(),
         _ => {
             p.emit_notice(
                 pos,
@@ -310,9 +315,10 @@ pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
             return Err(());
         }
     };
-    let signature = if p.next_token().type_ == TokenType::Colon {
+    chunk.write_string(name.clone());
+    if p.next_token().type_ == TokenType::Colon {
         if let Ok(t) = type_(p){
-            t
+            chunk.write_chunk(t)
         }else{
             p.emit_notice(p.current_token().pos, NoticeLevel::Error, "Could not create type signature for local variable.".to_string());
             return Err(())
@@ -320,9 +326,8 @@ pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
     } else {
         p.advance()
             .expect("Failed to advance parser to next token.");
-        TypeSignature::Untyped
-    };
-    p.emit_ir(pos, signature, HIRInstruction::LocalVar(name.clone(), false));
+        chunk.write_str("Unknown");
+    }
 
     if !p.check_consume(TokenType::Equal) {
         p.emit_notice(
@@ -334,7 +339,6 @@ pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
         let data = match &found_token.data {
             TokenData::Float(f) => f.to_string(),
             TokenData::Integer(i) => i.to_string(),
-            TokenData::Str(s) => (*s).to_string(),
             TokenData::String(s) => s.clone(),
             _ => "Unknown".to_string(),
         };
@@ -350,33 +354,40 @@ pub(crate) fn local_var<'a>(p: &mut Parser<'a>) -> IRError {
         p.emit_notice(
             pos,
             NoticeLevel::Error,
-            format!("Local variable {} cannot go uninitialized.", name),
+            format!("Local variable {} cannot go uninitialized.", name.clone()),
         );
     }
     Ok(())
 }
 
-fn expression<'a>(p: &mut Parser<'a>) -> IRError {
+fn expression(p: &mut Parser) -> ParseResult {
     let token = p.current_token();
-    let rule = rules::PARSER_RULE_TABLE
-        .get(&token.type_)
-        .expect(format!("Could not find parse rule for current token: {:?}", token).as_str());
-    let infix = rule.infix;
-    if infix as usize == nil_func as usize {
-        p.emit_notice(
-            token.pos,
-            NoticeLevel::Error,
-            "Expected an infix function, but instead got nil_func".to_string(),
-        );
-        return Err(());
+    let mut chunk = Chunk::new();
+    match &token.data{
+        TokenData::Float(f) => {
+            chunk.write_instruction(HIRInstruction::Float);
+            chunk.write_float(*f);
+        }
+        TokenData::Integer(i) => {
+            chunk.write_instruction(HIRInstruction::Integer);
+            chunk.write_int(*i);
+        }
+        TokenData::String(s) => {
+            chunk.write_instruction(HIRInstruction::String);
+            chunk.write_string(s.clone());
+        }
+        TokenData::None => {
+            chunk.write_instruction(HIRInstruction::None);
+        }
     }
-    infix(p).unwrap();
+    p.emit_ir_whole(chunk);
     p.advance().unwrap();
     Ok(())
 }
 
-pub(crate) fn literal<'a>(p: &mut Parser<'a>) -> IRError {
+pub(crate) fn literal(p: &mut Parser) -> ParseResult {
     // p.advance();
+    let mut chunk = Chunk::new();
     let current_token = p.current_token();
     let pos = current_token.pos;
     let token_type = current_token.type_;
@@ -384,11 +395,10 @@ pub(crate) fn literal<'a>(p: &mut Parser<'a>) -> IRError {
     match token_type {
         TokenType::Number => match current_token.data {
             TokenData::Integer(int) => {
-                p.emit_ir(
-                    pos,
-                    TypeSignature::Primitive(PrimitiveType::Integer),
-                    HIRInstruction::Integer(int as i32),
-                );
+                chunk.write_instruction(HIRInstruction::Integer);
+                chunk.write_int(int as i32);
+                chunk.write_pos(pos);
+                p.emit_ir_whole(chunk);
             }
             _ => {
                 p.emit_notice(
@@ -403,11 +413,12 @@ pub(crate) fn literal<'a>(p: &mut Parser<'a>) -> IRError {
             }
         },
         TokenType::String => match token_data {
-            TokenData::Str(s) => p.emit_ir(
-                pos,
-                TypeSignature::Primitive(PrimitiveType::String),
-                HIRInstruction::String(s.to_string().clone()),
-            ),
+            TokenData::String(s) => {
+                 chunk.write_instruction(HIRInstruction::String);
+                 chunk.write_string(s);
+                 chunk.write_pos(pos);
+                 p.emit_ir_whole(chunk);
+            },
             _ => unimplemented!(),
         },
         _ => unimplemented!(),
@@ -415,15 +426,17 @@ pub(crate) fn literal<'a>(p: &mut Parser<'a>) -> IRError {
     Ok(())
 }
 
-fn type_<'a>(p: &mut Parser<'a>) -> Result<TypeSignature, ()> {
+fn type_(p: &mut Parser) -> ChunkResult {
+    let mut chunk = Chunk::new();
     if p.advance().is_err(){
         p.emit_notice(p.current_token().pos, NoticeLevel::Error, "Could not advance parser.".to_string());
         return Err(())
     }
-    let current_token = &p.current_token();
+    let current_token = p.current_token();
     let ret = match (&current_token.type_, &current_token.data) {
-        (TokenType::Identifier, TokenData::Str(s)) => {
-            Ok(TypeSignature::Primitive(PrimitiveType::new(s)))
+        (TokenType::Identifier, TokenData::String(s)) => {
+            chunk.write_string(s.clone());
+            Ok(chunk)
         }
         _ => Err(()),
     };
