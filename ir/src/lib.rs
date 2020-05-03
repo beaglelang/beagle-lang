@@ -76,7 +76,7 @@ impl Chunk{
 
     pub fn read_int_at(&self, idx: usize) -> i32{
         let int = i32::from_be_bytes(unsafe { *(self.code[idx..idx+4].as_ptr() as *const [u8; 4]) });
-        self.inc_ins_ptr(5);
+        self.inc_ins_ptr(4);
         return int;
     }
 
@@ -115,7 +115,7 @@ impl Chunk{
     pub fn read_string_at(&self, idx: usize) -> String{
         let length = self.read_int();
         let string = unsafe { String::from_raw_parts(self.code[idx+4..].as_ptr() as *mut u8, length as usize, length as usize) };
-        self.inc_ins_ptr(length as usize + 1);
+        self.inc_ins_ptr(length as usize);
         return string
     }
 
@@ -140,7 +140,7 @@ impl Chunk{
 
     pub fn read_usize_at(&self, idx: usize) -> usize{
         let float = usize::from_be_bytes(unsafe { *(self.code[idx..idx+8].as_ptr() as *const [u8; 8]) });
-        self.inc_ins_ptr(9);
+        self.inc_ins_ptr(std::mem::size_of::<usize>());
         return float
     }
 
@@ -174,7 +174,9 @@ impl Chunk{
     }
 
     pub fn read_byte(&self) -> u8{
-        self.get_current()
+        let b = self.get_current();
+        self.advance();
+        b
     }
 
     pub fn write_chunk(&mut self, chunk: Self){

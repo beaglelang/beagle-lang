@@ -4,6 +4,8 @@ use crate::{
     Parser,
 };
 
+use core::pos::BiPos;
+
 use ir::{
     hir::{
         HIRInstruction
@@ -107,7 +109,6 @@ pub(crate) fn property(p: &mut Parser) -> ParseResult {
         }
     };
     chunk.write_string(name);
-    chunk.write_bool(mutable);
     if p.check_consume(TokenType::Colon) {
         if let Ok(t) = type_(p){
             chunk.write_chunk(t);
@@ -189,6 +190,7 @@ pub(crate) fn function(p: &mut Parser) -> ParseResult {
             let mut param_chunk = Chunk::new();
             param_chunk.write_instruction(HIRInstruction::FnParam);
             if p.check(TokenType::RParen){
+                chunk.write_instruction(HIRInstruction::EndParams);
                 break;
             }
             let loc = p.next_token().pos;
@@ -203,6 +205,7 @@ pub(crate) fn function(p: &mut Parser) -> ParseResult {
                     return Err(());
                 }
             };
+            param_chunk.write_pos(loc);
             param_chunk.write_string(param_name);
             let _ = p.consume(TokenType::Colon);
             let param_typename = match p.consume(TokenType::Identifier).unwrap() {
@@ -217,7 +220,6 @@ pub(crate) fn function(p: &mut Parser) -> ParseResult {
                 }
             };
             param_chunk.write_string(param_typename);
-            param_chunk.write_pos(loc);
             chunk.write_chunk(param_chunk);
             p.advance().unwrap();
         }
@@ -239,6 +241,8 @@ pub(crate) fn function(p: &mut Parser) -> ParseResult {
     };
 
     chunk.write_string(typename);
+    chunk.write_pos(p.current_token().pos);
+    p.emit_ir_whole(chunk);
 
     if p.consume(TokenType::LCurly).is_err(){
         return Err(())
@@ -260,6 +264,7 @@ pub(crate) fn function(p: &mut Parser) -> ParseResult {
     end_chunk.write_pos(p.prev_token().pos);
     end_chunk.write_instruction(HIRInstruction::EndFn);
 
+    p.emit_ir_whole(end_chunk);
     Ok(())
 }
 
@@ -296,6 +301,13 @@ pub(crate) fn local_var(p: &mut Parser) -> ParseResult {
     chunk.write_instruction(HIRInstruction::LocalVar);
     let pos = p.current_token().pos;
     chunk.write_pos(pos);
+    if p.check_consume_next(TokenType::KwMut){
+        chunk.write_bool(true);
+        chunk.write_pos(p.current_token().pos);
+    }else{
+        chunk.write_bool(false);
+        chunk.write_pos(BiPos::default());
+    }
     if !p.check(TokenType::Identifier) {
         let message = format!(
             "Expected an identifier token, but instead got {}",
@@ -316,6 +328,7 @@ pub(crate) fn local_var(p: &mut Parser) -> ParseResult {
         }
     };
     chunk.write_string(name.clone());
+    chunk.write_pos(p.current_token().pos);
     if p.next_token().type_ == TokenType::Colon {
         if let Ok(t) = type_(p){
             chunk.write_chunk(t)
@@ -328,6 +341,8 @@ pub(crate) fn local_var(p: &mut Parser) -> ParseResult {
             .expect("Failed to advance parser to next token.");
         chunk.write_str("Unknown");
     }
+    chunk.write_pos(p.current_token().pos);
+    p.emit_ir_whole(chunk);
 
     if !p.check_consume(TokenType::Equal) {
         p.emit_notice(
@@ -366,18 +381,22 @@ fn expression(p: &mut Parser) -> ParseResult {
     match &token.data{
         TokenData::Float(f) => {
             chunk.write_instruction(HIRInstruction::Float);
+            chunk.write_pos(token.pos);
             chunk.write_float(*f);
         }
         TokenData::Integer(i) => {
             chunk.write_instruction(HIRInstruction::Integer);
+            chunk.write_pos(token.pos);
             chunk.write_int(*i);
         }
         TokenData::String(s) => {
             chunk.write_instruction(HIRInstruction::String);
+            chunk.write_pos(token.pos);
             chunk.write_string(s.clone());
         }
         TokenData::None => {
             chunk.write_instruction(HIRInstruction::None);
+            chunk.write_pos(token.pos);
         }
     }
     p.emit_ir_whole(chunk);

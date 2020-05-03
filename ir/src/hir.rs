@@ -111,8 +111,11 @@ impl std::fmt::Display for Chunk{
                 Some(HIRInstruction::LocalVar) => {
                     let pos = self.read_pos();
                     let mutable = self.read_bool();
+                    let _mut_pos = self.read_pos();
                     let name = self.read_string();
+                    let _name_pos = self.read_pos();
                     let typename = self.read_string();
+                    let _typename_pos = self.read_pos();
                     writeln!(f, "{}{}Local{}{}{}: {}", pos, padding(), if mutable{ "Var" }else{ "Val" }, padding(), name, typename)?;
                 }
                 Some(HIRInstruction::Property) => {
@@ -134,7 +137,7 @@ impl std::fmt::Display for Chunk{
                 }
                 Some(HIRInstruction::String) => {
                     let pos = self.read_pos();
-                    let value = self.read_int();
+                    let value = self.read_string();
                     writeln!(f, "{}{}String{}{}", pos, padding(), padding(), value)?;
                 }
                 Some(HIRInstruction::Bool) => {

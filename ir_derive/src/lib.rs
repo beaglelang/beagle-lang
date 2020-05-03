@@ -35,8 +35,10 @@ pub fn read_ins_derive(input: TokenStream) -> TokenStream{
     let gen = quote!{
         impl ReadInstruction<#name> for Chunk{
             fn read_instruction(&self) -> Option<#name> {
-                let ins = FromPrimitive::from_u8(self.get_current());
-                // self.advance();
+                if !self.can_read(){
+                    return None
+                }
+                let ins = FromPrimitive::from_u8(self.read_byte());
                 ins
             }
         }
