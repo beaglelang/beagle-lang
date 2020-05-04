@@ -10,6 +10,7 @@ use ir::{
 
 use num_traits::FromPrimitive;
 
+#[allow(unused_imports)]
 use ir_traits::{
     WriteInstruction,
     ReadInstruction,
@@ -32,6 +33,7 @@ use notices::{
 
 use core::pos::BiPos;
 
+#[allow(dead_code)]
 struct MemmyElement{
     bc_index: usize,
     count: usize,
@@ -39,6 +41,7 @@ struct MemmyElement{
     refs: Vec<(String, usize)>
 }
 
+#[allow(dead_code)]
 pub struct MemmyGenerator{
     module_name: String,
     symbol_table: Vec<MemmyElement>,
@@ -68,6 +71,7 @@ impl MemmyGenerator{
         return Ok(())
     }
 
+    #[allow(dead_code)]
     fn determine_alloc_size(&mut self, chunk: &mut Chunk) -> Option<(usize, Option<Chunk>)>{
         let mut ret_chunk = Chunk::new();
         let pos = chunk.read_pos();
@@ -160,6 +164,7 @@ impl MemmyGenerator{
         Ok(new_chunk)
     }
 
+    #[allow(dead_code)]
     fn convert_function_block(&mut self, mut chunk: &mut Chunk) -> Result<(),()>{
         let mut header = Chunk::new();
         let mut preallocs = Chunk::new();

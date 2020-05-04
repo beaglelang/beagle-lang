@@ -1,7 +1,5 @@
 use crate::lexer::tokens::{LexerToken, TokenData, TokenType};
 
-use core::ansi::{Bg, Fg};
-
 use std::sync::mpsc::{Receiver, Sender};
 
 use ir::{
@@ -14,7 +12,7 @@ use core::{
 };
 
 use ir_traits::{
-    WriteInstruction, ReadInstruction,
+    WriteInstruction,
 };
 
 use symbol_table::SymbolTable;

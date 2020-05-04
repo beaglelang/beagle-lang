@@ -6,32 +6,24 @@ use lexer::tokens;
 
 pub mod parser;
 use ir::{
-    hir::{
-        HIRInstruction,
-    },
     Chunk,
-    mir::{
-        MIRInstructions
-    },
 };
 use parser::Parser;
-use ir_traits::ReadInstruction;
 
 use std::sync::mpsc::{
     channel,
-    Sender,
     Receiver
 };
 
 use notices::{Notice, NoticeLevel};
 use typeck::{
-    Typeck,
     TypeckManager
 };
 
 trait ModuleWrapper<'a>{}
 impl<'a> ModuleWrapper<'a> for ir::Module{}
 
+#[allow(dead_code)]
 pub struct Driver{
     lexer_manager: lexer::LexerManager,
     parser_manager: parser::ParseManager,
@@ -41,11 +33,11 @@ pub struct Driver{
 
 impl Driver {
     pub fn new() -> Driver{
-        let (token_tx, token_rx) = channel::<tokens::LexerToken>();
-        let (hir_tx, hir_rx) = channel::<Option<Chunk>>();
+        let (_token_tx, _token_rx) = channel::<tokens::LexerToken>();
+        let (_hir_tx, _hir_rx) = channel::<Option<Chunk>>();
         let (notice_tx, notice_rx) = channel::<Option<Notice>>();
-        let (typeck_tx, typeck_rx) = channel::<Option<Chunk>>();
-        let (mir_tx, mir_rx) = channel::<Option<Chunk>>();
+        let (_typeck_tx, _typeck_rx) = channel::<Option<Chunk>>();
+        let (_mir_tx, _mir_rx) = channel::<Option<Chunk>>();
 
         let lexer_manager = lexer::LexerManager::new(notice_tx.clone());
         let parser_manager = parser::ParseManager::new(notice_tx.clone());
@@ -70,9 +62,10 @@ impl Driver {
 
         let (token_tx, token_rx) = channel();
         let (hir_tx, hir_rx) = channel();
-        let (typeck_tx, typeck_rx) = channel::<Option<Chunk>>();
-        let (mir_tx, mir_rx) = channel::<Option<Chunk>>();
+        let (_typeck_tx, _typeck_rx) = channel::<Option<Chunk>>();
+        let (_mir_tx, _mir_rx) = channel::<Option<Chunk>>();
 
+        #[allow(unused_mut)]
         let mut module = ir::Module::new(name.clone().to_string());
 
         self.lexer_manager.enqueue_module(name.clone().to_owned(), instr.clone(), token_tx);

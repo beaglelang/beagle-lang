@@ -77,7 +77,7 @@ impl Typeck{
     }
 
     ///We need to keep track of the expression chunk and return it after we type check it.
-    fn check_expression(&mut self, mut chunk: Chunk) -> Result<Chunk,()>{
+    fn check_expression(&mut self, chunk: Chunk) -> Result<Chunk,()>{
         let pos = chunk.read_pos();
         let mut ret_chunk = Chunk::new();
         loop{
@@ -118,7 +118,7 @@ impl Typeck{
 
     fn check(&mut self) -> Result<(),()>{
         loop{
-            let mut chunk = if let Ok(Some(chunk)) = self.chunk_rx.recv(){
+            let chunk = if let Ok(Some(chunk)) = self.chunk_rx.recv(){
                 chunk
             }else{
                 return Ok(())

@@ -2,21 +2,11 @@ use core::pos::BiPos;
 use lazy_static::lazy_static;
 use std::collections::{
     HashMap,
-    VecDeque
 };
 use std::io::Result;
-use std::sync::{mpsc::Sender,mpsc::Receiver, Arc, Mutex};
+use std::sync::{mpsc::Sender, Arc, Mutex};
 use futures::{
-    future::{
-        Future,
-        Lazy,
-        lazy
-    },
-    executor::ThreadPool,
-};
-use std::thread::*;
-use core::thread_pool::{
-    Job
+  executor::ThreadPool,
 };
 
 use notices::*;
@@ -24,8 +14,6 @@ use notices::*;
 pub mod tokens;
 use tokens::{
     LexerToken,
-    TokenData,
-    TokenType
 };
 
 lazy_static! {

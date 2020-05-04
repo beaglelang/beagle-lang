@@ -47,7 +47,7 @@ pub(crate) fn declaration_or_statement(p: &mut Parser) -> ParseResult {
     }
 }
 
-pub(crate) fn mod_declaration(p: &mut Parser) -> ParseResult {
+pub(crate) fn mod_declaration(_: &mut Parser) -> ParseResult {
     Ok(())
 }
 
@@ -404,6 +404,7 @@ fn expression(p: &mut Parser) -> ParseResult {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub(crate) fn literal(p: &mut Parser) -> ParseResult {
     // p.advance();
     let mut chunk = Chunk::new();
