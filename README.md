@@ -2,10 +2,10 @@
 Beagle is a new mid-level programming language whose sole mission is to provide high level programmers the ability to reach to low level at will, without reprocusions or a garbage collector, while maintaining memory safety and efficiency.
 
 ## How?
-Beagle provides high level features with the option for memory management. It achieves memory safety using a little (fictional) beagle puppy named Memmy. Memmy is your smart **mem**ory **m**anager (added the y at the end to make it sound adorable). Memmy is responsible for converting high level code into low level memory safe, memory efficient code. This is done by following 3 simple rules:
+Beagle provides high level features with the option for memory management. It achieves memory safety using a new form of automatic memory management called Memmy. Memmy is your smart **mem**ory **m**anager (added the y at the end to make it sound better). Memmy is responsible for converting high level code into low level memory safe, memory efficient code. This is done by following 3 simple rules:
 * Properties are always heap allocated
 * Locals are always stack allocated
-* Properties can be referenced but locals can only be copied are moved.
+* Properties are pass-by-reference while locals are pass-by-value.
 
 Memmy pretends there is a borrow checker in place and does the borrow checking for you. There are currently plans put into place to allow the user to take control of memory management at will to any level. There will be `ref`, `mov`, and `dup` keywords (or perhaps just `ref`, `move`, or `copy`; WIP).
 
