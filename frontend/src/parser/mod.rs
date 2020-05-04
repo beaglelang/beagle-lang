@@ -232,10 +232,12 @@ impl Parser {
         match functions::module(&mut parser) {
             Ok(()) => {
                 parser.emit_notice(Position::default(), NoticeLevel::Halt, "Halt".to_string());
+                parser.ir_tx.lock().unwrap().send(None).unwrap();
                 return Ok(());
             }
             Err(_) => {
                 parser.emit_notice(Position::default(), NoticeLevel::Halt, "Halt".to_string());
+                parser.ir_tx.lock().unwrap().send(None).unwrap();
                 return Err("An error occurred while parsing module".to_string());
             }
         }

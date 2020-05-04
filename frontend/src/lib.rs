@@ -6,12 +6,16 @@ use lexer::tokens;
 
 pub mod parser;
 use ir::{
+    hir::{
+        HIRInstruction,
+    },
     Chunk,
     mir::{
         MIRInstructions
     },
 };
 use parser::Parser;
+use ir_traits::ReadInstruction;
 
 use std::sync::mpsc::{
     channel,
@@ -85,30 +89,26 @@ impl Driver {
                         };
                     },
                     Ok(_) => continue,
-                    Err(m) => {
-                        println!(
-                            "An error occurred while receiving notice from parser: {:?}",
-                            m.to_string()
-                        );
+                    Err(_) => {
                         break;
                     }
                 };
             }
         };
 
-        let ir_task = async {
-            while let Ok(chunk) = mir_rx.recv() {
-                println!("{}", chunk.unwrap());
-            }
-        };
+        // let ir_task = async {
+        //     while let Ok(Some(chunk)) = mir_rx.recv() {
+        //         println!("{}", chunk);
+        //     }
+        // };
 
         let parser_ir_task = async{
-            while let Ok(chunk) = hir_rx.recv() {
-                println!("{}", chunk.unwrap());
+            while let Ok(Some(chunk)) = hir_rx.recv() {
+                println!("{}", chunk);
             }
         };
 
-        futures::join!(parser_ir_task, ir_task, notice_task);
+        futures::join!(notice_task, parser_ir_task);
         
         Ok(Box::new(module))
     }
