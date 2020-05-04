@@ -106,7 +106,7 @@ impl Typeck{
                 Some(HIRInstruction::String) => {
                     ret_chunk.write_instruction(current.unwrap());
                     let value = chunk.read_string();
-                    ret_chunk.write_string(value);
+                    ret_chunk.write_string(value.to_owned());
                 }
                 _ => {
                     break;
@@ -129,7 +129,7 @@ impl Typeck{
                     chunk.advance();
                     let pos = chunk.read_pos();
                     chunk.advance();
-                    let name = chunk.read_string();
+                    let name = chunk.read_string().to_owned();
                     chunk.advance();
                     let mutable = chunk.read_bool();
                     chunk.advance();

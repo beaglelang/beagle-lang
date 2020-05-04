@@ -90,7 +90,7 @@ impl MemmyGenerator{
                 let name = chunk.read_string();
                 let mut new_chunk = Chunk::new();
                 new_chunk.write_instruction(MIRInstructions::String);
-                new_chunk.write_string(name.clone());
+                new_chunk.write_str(name.clone());
                 Some((name.len(), Some(new_chunk)))
             },
             Some(HIRInstruction::None) => {
@@ -148,7 +148,7 @@ impl MemmyGenerator{
                 let pos = chunk.read_pos();
                 new_chunk.write_pos(pos);
                 let value = chunk.read_string();
-                new_chunk.write_string(value);
+                new_chunk.write_str(value);
                 chunk.advance();
                 let vpos = chunk.read_pos();
                 new_chunk.write_pos(vpos);
@@ -168,7 +168,7 @@ impl MemmyGenerator{
             header.write_instruction(MIRInstructions::Fun);
             chunk.advance();
             let name = chunk.read_string();
-            header.write_string(name);
+            header.write_str(name);
         }else{
             let pos = chunk.read_pos();
             self.emit_error(format!("Expected an Fn HIR instruction, instead got {}", chunk.get_current()), pos)?;
@@ -178,7 +178,7 @@ impl MemmyGenerator{
         header.write_pos(pos);
         chunk.advance();
         let name = chunk.read_string();
-        header.write_string(name);
+        header.write_str(name);
         chunk.advance();
         loop{
             let next = &chunk.get_current();
@@ -187,7 +187,7 @@ impl MemmyGenerator{
                     header.write_instruction(MIRInstructions::FunParam);
                     chunk.advance();
                     let name = chunk.read_string();
-                    header.write_string(name);
+                    header.write_str(name);
                 },
                 Some(HIRInstruction::LocalVar) => {
                     chunk.advance();
@@ -195,7 +195,7 @@ impl MemmyGenerator{
                     let var_pos = chunk.read_pos();
                     chunk.advance();
                     //Get the anem
-                    let name = chunk.read_string();
+                    let name = chunk.read_string().to_owned();
                     chunk.advance();
                     //Get the position of the name
                     let name_pos = chunk.read_pos();
@@ -211,13 +211,13 @@ impl MemmyGenerator{
                         return Err(())
                     };
                     
-                    preallocs.write_string(name.clone());
+                    preallocs.write_str(name.clone().as_str());
                     preallocs.write_pos(name_pos);
                     preallocs.write_instruction(MIRInstructions::StackAlloc);
                     preallocs.write_usize(size.0);
                     if let Some(chunk) = size.1{
                         other.write_instruction(MIRInstructions::ObjInit);
-                        other.write_string(name);
+                        other.write_str(name.as_str());
                         other.write_pos(name_pos);
                         other.write_bool(mutable);
                         other.write_pos(mut_pos);
@@ -230,7 +230,7 @@ impl MemmyGenerator{
                     let var_pos = chunk.read_pos();
                     chunk.advance();
                     //Get the anem
-                    let name = chunk.read_string();
+                    let name = chunk.read_string().to_owned();
                     chunk.advance();
                     //Get the position of the name
                     let name_pos = chunk.read_pos();
@@ -246,13 +246,13 @@ impl MemmyGenerator{
                         return Err(())
                     };
                     
-                    preallocs.write_string(name.clone());
+                    preallocs.write_str(name.clone().as_str());
                     preallocs.write_pos(name_pos);
                     preallocs.write_instruction(MIRInstructions::HeapAlloc);
                     preallocs.write_usize(size.0);
                     if let Some(chunk) = size.1{
                         other.write_instruction(MIRInstructions::ObjInit);
-                        other.write_string(name);
+                        other.write_str(name.as_str());
                         preallocs.write_pos(name_pos);
                         other.write_bool(mutable);
                         preallocs.write_pos(mut_pos);

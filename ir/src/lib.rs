@@ -108,25 +108,26 @@ impl Chunk{
         return float
     }
 
-    pub fn read_string(&self) -> String{
+    pub fn read_string(&self) -> &str{
         self.read_string_at(self.ins_ptr.clone().into_inner())
     }
 
-    pub fn read_string_at(&self, idx: usize) -> String{
-        let length = self.read_int();
-        let string = unsafe { String::from_raw_parts(self.code[idx+4..].as_ptr() as *mut u8, length as usize, length as usize) };
+    pub fn read_string_at(&self, idx: usize) -> &str{
+        let length = self.read_int() as usize;
+        let start = idx+4;
+        let string= &self.code[start..start+length];
         self.inc_ins_ptr(length as usize);
-        return string
+        return std::str::from_utf8(string).unwrap()
     }
 
     pub fn write_string(&mut self, str: String){
-        self.code.extend((str.len() as i32).to_be_bytes().iter());
-        self.code.extend(str.as_bytes())
+        self.write_int(str.len() as i32);
+        self.code.append(str.as_bytes().to_vec().as_mut())
     }
 
     pub fn write_str(&mut self, str: &str){
-        self.code.extend((str.len() as i32).to_be_bytes().iter());
-        self.code.extend(str.as_bytes())
+        self.write_int(str.len() as i32);
+        self.code.append(str.as_bytes().to_vec().as_mut())
     }
 
     pub fn read_usize(&self) -> usize{
