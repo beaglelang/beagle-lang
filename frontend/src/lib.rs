@@ -20,9 +20,6 @@ use typeck::{
     TypeckManager
 };
 
-trait ModuleWrapper<'a>{}
-impl<'a> ModuleWrapper<'a> for ir::Module{}
-
 #[allow(dead_code)]
 pub struct Driver{
     lexer_manager: lexer::LexerManager,

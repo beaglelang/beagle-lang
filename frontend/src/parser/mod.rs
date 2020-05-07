@@ -15,8 +15,6 @@ use ir_traits::{
     WriteInstruction,
 };
 
-use symbol_table::SymbolTable;
-
 use std::sync::{Arc, Mutex};
 
 use notices::{Notice, NoticeLevel};
@@ -72,7 +70,6 @@ pub struct Parser {
     pub token_rx: Receiver<LexerToken>,
     pub notice_tx: Sender<Option<Notice>>,
     pub context: ParseContext,
-    pub symbols: SymbolTable,
 
     active_tokens: [LexerToken; 3],
 }
@@ -90,7 +87,6 @@ impl Parser {
             token_rx,
             notice_tx,
             context: ParseContext::TopLevel,
-            symbols: SymbolTable::default(),
             active_tokens: [
                 LexerToken::default(),
                 LexerToken::default(),

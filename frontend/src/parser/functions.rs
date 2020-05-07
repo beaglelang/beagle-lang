@@ -108,7 +108,8 @@ pub(crate) fn property(p: &mut Parser) -> ParseResult {
             return Err(());
         }
     };
-    chunk.write_string(name);
+
+    chunk.write_string(name.clone());
     if p.check_consume(TokenType::Colon) {
         if let Ok(t) = type_(p){
             chunk.write_chunk(t);

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct Position(pub usize, pub usize);
 impl Default for Position {
     fn default() -> Self {
-        Self(1, 1)
+        Self(0, 0)
     }
 }
 
@@ -27,7 +27,7 @@ pub struct BiPos {
 
 impl std::fmt::Display for BiPos {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "start: {:?}, end: {:?}", self.start, self.end)
+        write!(f, "{{{{{},{}}}, {{{}, {}}}}}", self.start.0, self.start.1, self.end.0, self.end.1)
     }
 }
 
