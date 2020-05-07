@@ -37,7 +37,7 @@ impl SymbolTable{
         self.symbols.push(Symbol{
             name,
             type_: return_type,
-            kind: SymbolKind::Property
+            kind: SymbolKind::Function(SymbolTable::new())
         });
     }
 
@@ -48,7 +48,7 @@ impl SymbolTable{
                     &table.symbols.push(Symbol{
                         name: local_name,
                         type_,
-                        kind: SymbolKind::Property
+                        kind: SymbolKind::Local
                     });
                     break;
                 }
