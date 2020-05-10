@@ -24,8 +24,6 @@ type ChunkResult = Result<Chunk, ()>;
 
 pub fn module(p: &mut Parser) -> ParseResult {
     let mut chunk = Chunk::new();
-    chunk.write_instruction(HIRInstruction::Module);
-    chunk.write_string(p.name.clone());
     p.emit_ir_whole(chunk);
     while !p.check(TokenType::Eof) {
         if let Err(()) = declaration_or_statement(p) {
@@ -34,8 +32,6 @@ pub fn module(p: &mut Parser) -> ParseResult {
         // p.advance().unwrap();
     }
     let mut end_chunk = Chunk::new();
-    end_chunk.write_instruction(HIRInstruction::EndModule);
-    end_chunk.write_string(p.name.clone());
     p.emit_ir_whole(end_chunk);
     Ok(())
 }

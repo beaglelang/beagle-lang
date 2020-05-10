@@ -129,6 +129,11 @@ struct Statement{
     pos: BiPos,
 }
 
+struct Module{
+    ident: String,
+    statements: Vec<Statement>,
+}
+
 #[derive(Debug, Clone)]
 struct Property{
     ident: String,
