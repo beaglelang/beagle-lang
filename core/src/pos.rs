@@ -19,7 +19,7 @@ impl Default for Position {
 // }
 
 ///A position consisting of two positions. This is for tracking start and end for complex data.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct BiPos {
     pub start: Position,
     pub end: Position,
@@ -27,7 +27,7 @@ pub struct BiPos {
 
 impl std::fmt::Display for BiPos {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{{{{},{}}}, {{{}, {}}}}}", self.start.0, self.start.1, self.end.0, self.end.1)
+        write!(f, "{{{{{},{}}}, {{{}, {}}}}}", self.start.0 + 1, self.start.1, self.end.0 + 1, self.end.1)
     }
 }
 

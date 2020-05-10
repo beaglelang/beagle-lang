@@ -53,11 +53,7 @@ impl Notice {
                             line
                         );
 
-                        if i == if self.pos.start.0 > 3 {
-                            3
-                        } else {
-                            self.pos.start.0 as usize - 1
-                        } {
+                        if i == start_line {
                             println!("\t{}---- | {}{}", colour, squiggly, ansi::Fg::Reset);
                         };
                     });
@@ -83,25 +79,25 @@ impl SourceOrigin for BiPos {
         };
         let lines: Vec<&str> = source
             .lines()
-            .skip(start_line as usize - 1)
+            .skip(start_line as usize)
             .take(7)
             .collect();
         let error_line = if lines.len() > 3 {
             lines[3]
         } else {
-            lines[self.start.0 as usize - 1]
+            lines[self.start.0 as usize]
         };
-        let tab_count = error_line
-            .chars()
-            .enumerate()
-            .filter(|(i, c)| *c == '\t' && *i < self.start.1 as usize - 1)
-            .count();
+        
         let squiggly_line = format!(
-            "{}{}{}",
-            String::from("~").repeat(self.start.1 as usize - 1 + tab_count * TAB_WIDTH),
-            "^",
+            "{}{}",
+            core::padding::padding(" ", self.start.1-1),
             if (self.start.1 as usize) < error_line.len() {
-                String::from("~").repeat(error_line.len() - self.end.1 as usize)
+                let length = if self.end.1 - self.start.1 == 0{
+                    1
+                }else{
+                    self.end.1 - self.start.1
+                };
+                core::padding::padding("^", length).to_string()
             } else {
                 String::new()
             }

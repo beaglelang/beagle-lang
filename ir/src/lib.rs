@@ -51,7 +51,7 @@ impl Chunk{
     }
 
     pub fn can_read(&self) -> bool{
-        self.ins_ptr.clone().into_inner() + 1 < self.code.len()
+        self.ins_ptr.clone().into_inner() < self.code.len()
     }
 
     pub fn peek(&self) -> Option<&u8>{

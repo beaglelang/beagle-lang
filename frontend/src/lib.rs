@@ -59,15 +59,15 @@ impl Driver {
 
         let (token_tx, token_rx) = channel();
         let (hir_tx, hir_rx) = channel();
-        let (_typeck_tx, _typeck_rx) = channel::<Option<Chunk>>();
+        let (typeck_tx, typeck_rx) = channel::<Option<Chunk>>();
         let (_mir_tx, _mir_rx) = channel::<Option<Chunk>>();
 
         #[allow(unused_mut)]
         let mut module = ir::Module::new(name.clone().to_string());
 
-        self.lexer_manager.enqueue_module(name.clone().to_owned(), instr.clone(), token_tx);
+        self.lexer_manager.enqueue_module(name.clone().to_string(), instr.clone(), token_tx);
         self.parser_manager.enqueue_module(name.clone().to_string(), token_rx, hir_tx);
-        
+        self.typeck_manager.enqueue_module(name.clone().to_string(), hir_rx, typeck_tx);
 
         let notice_task = async {
             loop {
@@ -93,7 +93,7 @@ impl Driver {
         // };
 
         let parser_ir_task = async{
-            while let Ok(Some(chunk)) = hir_rx.recv() {
+            while let Ok(Some(chunk)) = typeck_rx.recv() {
                 println!("{}", chunk);
             }
         };

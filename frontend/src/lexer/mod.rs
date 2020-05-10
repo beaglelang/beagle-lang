@@ -268,14 +268,12 @@ impl<'a, 'b> Lexer{
         let start_idx = self.char_idx;
         self.advance().unwrap();
         while let Some(c) = self.advance_end() {
-            if c != '\"' {
-                continue;
-            } else {
+            if c == '\"' {
                 break;
             }
         }
 
-        let slice = match self.input.get(start_idx..self.char_idx-1) {
+        let slice = match self.input.get(start_idx..self.char_idx) {
             Some(s) => s,
             None => {
                 return Some(tokens::LexerToken {
@@ -293,25 +291,17 @@ impl<'a, 'b> Lexer{
         })
     }
 
-    fn skip_whitespace(&mut self){
-        while match self.peek(){
-            Some(c) if c == '\n' => {
-                self.current_pos.next_line();
-                true
-            }
-            Some(c) if c.is_whitespace() => true,
-            _ => false
-        }{
-            self.advance();
-        }
-        self.current_pos.start = self.current_pos.end;
-    }
-
     fn get_token(&mut self) -> Option<tokens::LexerToken> {
-        self.skip_whitespace();
-        match self.advance() {
+        // println!("Processing char: {:?}", self.peek());
+        match self.peek() {
             Some(c) => {
                 match c {
+                    c if c.is_whitespace() => {
+                        if c == '\n'{
+                            self.current_pos.next_line();
+                        }
+                        return None
+                    }
                     c if c.is_alphabetic() => {
                         let start = self.char_idx;
                         let end = loop {
@@ -324,7 +314,7 @@ impl<'a, 'b> Lexer{
                                 None => break self.input.len(),
                             }
                         };
-                        let identifier = &self.input[start-1..end];
+                        let identifier = &self.input[start..end];
                         let type_ = self.is_keyword(identifier);
                         return Some(tokens::LexerToken {
                             type_,
@@ -334,7 +324,9 @@ impl<'a, 'b> Lexer{
                     }
                     '\"' => {
                         return match self.string() {
-                            Some(t) => Some(t),
+                            Some(t) => {
+                                Some(t)
+                            },
                             None => {
                                 return Some(tokens::LexerToken {
                                     data: tokens::TokenData::String(format!(
@@ -347,13 +339,19 @@ impl<'a, 'b> Lexer{
                             }
                         }
                     }
-                    c if c.is_digit(10) => return self.number(),
+                    c if c.is_digit(10) => {
+                        let number = self.number();
+                        return number;
+                    },
                     c if self.is_delimiter(c).is_some() => {
-                        return Some(tokens::LexerToken {
+                        // println!("Found a delimiter: {}", c.clone());
+                        let token = tokens::LexerToken {
                             data: tokens::TokenData::String(c.to_string()),
                             type_: self.is_delimiter(c).unwrap(),
                             pos: self.current_pos,
-                        });
+                        };
+                        self.advance();
+                        return Some(token);
                     }
                     _ => {
                         return Some(tokens::LexerToken {
@@ -363,6 +361,7 @@ impl<'a, 'b> Lexer{
                         })
                     }
                 }
+                
             },
             None => Some(tokens::LexerToken{
                 type_: tokens::TokenType::Eof, 
@@ -379,22 +378,26 @@ impl<'a, 'b> Lexer{
             let token = self.get_token();
             match token {
                 Some(t) => {
-                    guard
-                        .send(t.clone())
-                        .expect("Failed to send token to token receiver.");
-                    match &t.type_ {
-                        tokens::TokenType::Eof => {
-                            break;
+                    // self.advance();
+                    // println!("{}", t.clone());
+                    match guard.send(t.clone()){
+                        Ok(()) => {
+                            match &t.type_ {
+                                tokens::TokenType::Eof => {
+                                    break;
+                                }
+                                tokens::TokenType::Err => {
+                                    return Err(format!(
+                                        "An error occurred while tokenizing input: {:?}",
+                                        t
+                                    )
+                                    .to_string())
+                                }
+                                _ => continue,
+                            };
                         }
-                        tokens::TokenType::Err => {
-                            return Err(format!(
-                                "An error occurred while tokenizing input: {:?}",
-                                t
-                            )
-                            .to_string())
-                        }
-                        _ => continue,
-                    };
+                        Err(_) => return Ok(())
+                    }
                 }
                 None => {
                     self.advance();

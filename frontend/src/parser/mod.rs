@@ -130,9 +130,9 @@ impl Parser {
             let mut halt_chunk = Chunk::new();
             halt_chunk.write_instruction(HIRInstruction::Halt);
             if let Err(e) = self.ir_tx.lock().unwrap().send(Some(halt_chunk)) {
-                eprintln!(
+                println!(
                     "{}Parser notice send error: {}{}",
-                    core::ansi::Fg::BrightRed,
+                    core::ansi::Fg::Red,
                     e,
                     core::ansi::Fg::Reset
                 );
@@ -169,11 +169,14 @@ impl Parser {
 
     #[inline]
     pub fn emit_ir_whole(&mut self, hir: Chunk){
-        self.ir_tx
+        match self.ir_tx
             .lock()
             .expect("Failed to acquire lock on ir_tx sender.")
-            .send(Some(hir))
-            .expect(format!("Failed to send IR through IR channel.").as_str())
+            .send(Some(hir)){
+                Ok(()) => return,
+                Err(_) => return,
+            }
+            
     }
 
     #[inline]
@@ -225,13 +228,16 @@ impl Parser {
         parser.advance().unwrap();
         match functions::module(&mut parser) {
             Ok(()) => {
-                parser.emit_notice(Position::default(), NoticeLevel::Halt, "Halt".to_string());
-                parser.ir_tx.lock().unwrap().send(None).unwrap();
+                // parser.emit_notice(Position::default(), NoticeLevel::Halt, "Halt".to_string());
+                if parser.ir_tx.lock().unwrap().send(None).is_err(){
+                    return Ok(())
+                }
                 return Ok(());
             }
             Err(_) => {
-                parser.emit_notice(Position::default(), NoticeLevel::Halt, "Halt".to_string());
-                parser.ir_tx.lock().unwrap().send(None).unwrap();
+                if parser.ir_tx.lock().unwrap().send(None).is_err(){
+                    return Err("An error occurred while parsing module".to_string())
+                }
                 return Err("An error occurred while parsing module".to_string());
             }
         }

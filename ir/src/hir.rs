@@ -50,9 +50,27 @@ pub enum HIRInstruction {
     Float,
     Bool,
     String,
+    //No type was specified
+    Unknown,
+    //A non-primitive type like A, Person, or Device
+    Custom,
+    //aka 'void'
+    Unit,
     None,
     
     Halt,
+}
+
+impl HIRInstruction{
+    pub fn from_string(string: String) -> (Self, Option<String>){
+        match string.clone().as_str(){
+            "String" => (Self::String, None),
+            "Int" => (Self::Integer, None),
+            "Float" => (Self::Float, None),
+            "Bool" => (Self::Bool, None),
+            _ => (Self::Unknown, Some(string))
+        }
+    }
 }
 
 pub fn padding() -> String{

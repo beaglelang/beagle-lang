@@ -120,7 +120,7 @@ pub(crate) fn property(p: &mut Parser) -> ParseResult {
     } else {
         p.advance()
             .expect("Failed to advance parser to next token.");
-        chunk.write_str("Unknown");
+        chunk.write_instruction(HIRInstruction::Unknown);
     };
 
     if !p.check_consume(TokenType::Equal) {
@@ -195,53 +195,35 @@ pub(crate) fn function(p: &mut Parser) -> ParseResult {
                 break;
             }
             let loc = p.next_token().pos;
-            let param_name = match p.consume(TokenType::Identifier).unwrap() {
-                TokenData::String(s) => (*s).to_string(),
-                _ => {
+            let param_name = match p.consume(TokenType::Identifier) {
+                Ok(TokenData::String(s)) => (*s).to_string(),
+                Ok(_) => {
                     p.emit_notice(
                         lpos,
                         NoticeLevel::Error,
                         "Failed to extract string data from identifier token.".to_string(),
                     );
                     return Err(());
-                }
+                },
+                Err(()) => return Err(())
             };
             param_chunk.write_pos(loc);
             param_chunk.write_string(param_name);
             let _ = p.consume(TokenType::Colon);
-            let param_typename = match p.consume(TokenType::Identifier).unwrap() {
-                TokenData::String(s) => (*s).to_string(),
-                _ => {
-                    p.emit_notice(
-                        lpos,
-                        NoticeLevel::Error,
-                        "Failed to extract string data from identifier token.".to_string(),
-                    );
-                    return Err(());
-                }
-            };
-            param_chunk.write_string(param_typename);
+            let param_type = type_(p).unwrap();
+            param_chunk.write_chunk(param_type);
             chunk.write_chunk(param_chunk);
             p.advance().unwrap();
         }
     }
-    let typename = if p.check_consume_next(TokenType::Colon){
-        match p.consume(TokenType::Identifier).unwrap() {
-            TokenData::String(s) => (*s).to_string(),
-            _ => {
-                p.emit_notice(
-                    lpos,
-                    NoticeLevel::Error,
-                    "Failed to extract string data from identifier token.".to_string(),
-                );
-                return Err(());
-            }
-        }
-    }else{
-        "Unit".to_string()
-    };
 
-    chunk.write_string(typename);
+    if p.check_consume_next(TokenType::Colon){
+        let retype_chunk = type_(p)?;
+        chunk.write_chunk(retype_chunk);
+    }else{
+        chunk.write_instruction(HIRInstruction::Unknown);
+    }
+
     chunk.write_pos(p.current_token().pos);
     p.emit_ir_whole(chunk);
 
@@ -456,13 +438,23 @@ fn type_(p: &mut Parser) -> ChunkResult {
     let current_token = p.current_token();
     let ret = match (&current_token.type_, &current_token.data) {
         (TokenType::Identifier, TokenData::String(s)) => {
-            chunk.write_string(s.clone());
+            chunk.write_pos(current_token.pos);
+            let str = s.as_str();
+            match str{
+                "Int" => chunk.write_instruction(HIRInstruction::Integer),
+                "Float" => chunk.write_instruction(HIRInstruction::Float),
+                "String" => chunk.write_instruction(HIRInstruction::String),
+                "Bool" => chunk.write_instruction(HIRInstruction::Bool),
+                _ => {
+                    chunk.write_instruction(HIRInstruction::Custom);
+                    chunk.write_string(s.clone());
+                }
+            }
             Ok(chunk)
         }
         _ => Err(()),
     };
     if ret.is_ok() {
-        p.advance().unwrap();
         ret
     } else {
         Err(())
