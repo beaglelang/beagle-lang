@@ -34,8 +34,7 @@ impl Chunk{
     }
 
     pub fn set_ins_ptr(&self, index: usize){
-        let mut _ins_ptr = self.ins_ptr.clone();
-        _ins_ptr.replace(index);
+        self.ins_ptr.replace(index);
     }
 
     pub fn jump_to(&self, index: usize) -> Result<(),String>{

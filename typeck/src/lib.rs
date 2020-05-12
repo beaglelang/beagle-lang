@@ -92,7 +92,7 @@ struct Fun{
 
 #[derive(Debug, Clone)]
 struct FunParam{
-    ident: String,
+    ident: Identifier,
     ty: Ty,
     pos: BiPos
 }
@@ -136,17 +136,31 @@ struct Module{
 
 #[derive(Debug, Clone)]
 struct Property{
-    ident: String,
+    ident: Identifier,
     ty: Ty,
     expr: Expr,
     pos: BiPos,
+    mutable: Mutability,
 }
 
 #[derive(Debug, Clone)]
 struct Local{
-    ident: String,
+    ident: Identifier,
     ty: Ty,
     expr: Expr,
+    pos: BiPos,
+    mutable: Mutability
+}
+
+#[derive(Debug, Clone)]
+struct Mutability{
+    mutable: bool,
+    pos: BiPos,
+}
+
+#[derive(Debug, Clone)]
+struct Identifier{
+    ident: String,
     pos: BiPos,
 }
 
@@ -253,7 +267,7 @@ impl<'a> Typeck{
     fn emit_notice(&self, msg: String, level: NoticeLevel, pos: Position) -> Result<(),()>{
         if self.notice_tx.send(
             Some(notices::Notice{
-                from: "Type checker".to_string(),
+                from: "Typeck".to_string(),
                 msg,
                 file: self.module_name.clone(),
                 level,
@@ -337,6 +351,7 @@ impl<'a> Typeck{
         let pos = chunk.read_pos();
         let mutable = chunk.read_bool();
         let name = chunk.read_string().to_string();
+        let name_pos = chunk.read_pos();
         let current_type: HIRInstruction = chunk.read_instruction().unwrap();
         let typename = if current_type == HIRInstruction::Custom{
             let typename = chunk.read_string().to_owned();
@@ -347,6 +362,7 @@ impl<'a> Typeck{
         let expr_chunk = if let Ok(Some(expr_chunk)) = self.chunk_rx.recv(){
             expr_chunk
         }else{
+            self.emit_notice(format!("Failed to get HIR chunk for expression while loading property"), NoticeLevel::Error, pos)?;
             return Err(())
         };
         
@@ -355,7 +371,10 @@ impl<'a> Typeck{
             Err(()) => return Err(())
         };
         let property = Property{
-            ident: name.clone(),
+            ident: Identifier{
+                ident: name.clone(),
+                pos: name_pos,
+            },
             ty: Ty{
                 ident: if typename.is_some(){
                     typename.unwrap()
@@ -375,7 +394,11 @@ impl<'a> Typeck{
                 pos: pos.clone(),
             },
             expr,
-            pos
+            pos,
+            mutable: Mutability{
+                mutable,
+                pos,
+            }
         };
         Ok(property)
     }
@@ -385,7 +408,7 @@ impl<'a> Typeck{
         let name = chunk.read_string();
         let mut params = vec![];
         while let Some(ins) = chunk.read_instruction() as Option<HIRInstruction>{
-            if ins != HIRInstruction::EndParams{
+            if ins == HIRInstruction::EndParams{
                 break;
             }
 
@@ -396,13 +419,14 @@ impl<'a> Typeck{
             }
 
             let param_name = chunk.read_string();
+            let param_type_pos = chunk.read_pos();
             let param_type = chunk.read_instruction() as Option<HIRInstruction>;
             let param_typename = match param_type{
                 Some(type_) => {
                     if type_ == HIRInstruction::Custom{
-                        Some(chunk.read_string())
+                        Some(chunk.read_string().to_string())
                     }else{
-                        None
+                        Some(format!("{:?}", type_))
                     }
                 }
                 None => {
@@ -411,14 +435,13 @@ impl<'a> Typeck{
                 }
             };
             params.push(FunParam{
-                ident: param_name.to_owned(),
-                ty: Ty{
-                    ident: if param_typename.is_none(){
-                        param_typename.unwrap().to_owned()
-                    }else{
-                        format!("{:?}", param_typename.unwrap())
-                    },
+                ident: Identifier{
+                    ident: param_name.to_owned(),
                     pos
+                },
+                ty: Ty{
+                    ident: param_typename.unwrap(),
+                    pos: param_type_pos
                 },
                 pos
             });
@@ -438,17 +461,38 @@ impl<'a> Typeck{
                 return Err(())
             }
         };
-        let mut statements = vec![];
+        let block_chunk = match self.chunk_rx.recv(){
+            Ok(Some(chunk)) => {
+                chunk
+            }
+            Ok(None) => {
+                self.emit_notice(format!("Incomplete bytecode. Expected a chunk for function body. This is a bug in the compiler."), NoticeLevel::Error, BiPos::default())?;
+                self.emit_notice(format!("The previous error should only have occurred during development. If you are a user then please notify the author."), NoticeLevel::Notice, BiPos::default())?;
+                return Err(())
+            }
+            Err(_) =>{
+                self.emit_notice(format!("Failed to get chunk from chunk channel."), NoticeLevel::Error, BiPos::default())?;
+                self.emit_notice(format!("The previous error should only have occurred during development. If you are a user then please notify the author."), NoticeLevel::Notice, BiPos::default())?;
+                return Err(())
+            }
+        };
+        let mut block: Vec<Statement> = if let Some(HIRInstruction::Block) = block_chunk.read_instruction(){
+            vec![]
+        }else{
+            self.emit_notice(format!("Expected a block chunk denotig the start of a function body."), NoticeLevel::Error, block_chunk.read_pos())?;
+            return Err(())
+        };
         loop{
             let next_chunk = self.chunk_rx.recv().unwrap().unwrap();
-            if let Some(HIRInstruction::EndFn) = next_chunk.read_instruction(){
+            if let Some(HIRInstruction::EndBlock) = next_chunk.read_instruction(){
                 break;
             }
+            next_chunk.jump_to(0).unwrap();
             let statement = match self.load_statement(next_chunk){
                 Ok(statement) => statement,
                 Err(()) => return Err(())
             };
-            statements.push(statement);
+            block.push(statement);
         }
         let fun = Fun{
             ident: name.to_owned(),
@@ -456,11 +500,64 @@ impl<'a> Typeck{
                 ident: typename,
                 pos: fun_type_pos,
             },
-            body: Vec::new(),
+            body: block,
             params,
             pos
         };
         Ok(fun)
+    }
+
+    fn load_local(&self, chunk: Chunk) -> Result<Local, ()>{
+        let pos = chunk.read_pos();
+        let mutable = chunk.read_bool();
+        let mut_pos = chunk.read_pos();
+        let name = chunk.read_string();
+        let name_pos = chunk.read_pos();
+
+        let type_pos = chunk.read_pos();
+        let type_ins: Option<HIRInstruction> = chunk.read_instruction();
+        let typename = match type_ins{
+            Some(type_ins) => {
+                if type_ins == HIRInstruction::Custom{
+                    chunk.read_string().to_owned()
+                }else{
+                    format!("{:?}", type_ins)
+                }
+            }
+            None => {
+                self.emit_notice(format!("Expected a return type instruction but instead got {:?}; this is compiler bug.", type_ins.unwrap()), NoticeLevel::Error, type_pos)?;
+                return Err(())
+            }
+        };
+
+        let expr_chunk = if let Ok(Some(expr_chunk)) = self.chunk_rx.recv(){
+            expr_chunk
+        }else{
+            self.emit_notice(format!("Failed to get HIR chunk for expression while loading property"), NoticeLevel::Error, pos)?;
+            return Err(())
+        };
+        let expr = match self.load_expression(expr_chunk){
+            Ok(expr) => expr,
+            Err(()) => return Err(())
+        };
+        return Ok(
+            Local{
+                ident: Identifier{
+                    ident: name.to_string(),
+                    pos: name_pos,
+                },
+                pos,
+                ty: Ty{
+                    ident: typename,
+                    pos: type_pos
+                },
+                expr,
+                mutable: Mutability{
+                    mutable,
+                    pos: mut_pos
+                }
+            }
+        )
     }
 
     fn load_statement(&self, chunk: Chunk) -> Result<Statement,()>{
@@ -483,7 +580,24 @@ impl<'a> Typeck{
                 },
                 Err(()) => Err(())
             },
-            _ => Err(())
+            Some(HIRInstruction::LocalVar) => match self.load_local(chunk){
+                Ok(local) => {
+                    Ok(Statement{
+                        kind: StatementKind::Local(local.clone()),
+                        pos: local.pos.clone()
+                    })
+                },
+                Err(()) => Err(())
+            }
+            _ => {
+                chunk.jump_to(0).unwrap();
+                if chunk.code.is_empty(){
+                    self.emit_notice(format!("Malformed bytecode chunk: chunk is empty, which is a bug in the compiler."), NoticeLevel::Error, BiPos::default())?;
+                }else{
+                    self.emit_notice(format!("Malformed bytecode chunk: could not read instruction from chunk; no further information provided. This should only happening during development and should never be seen by the user. If this is the case contact the author with this information: \n\tTypeck#load_statement failed to read instruction from chunk.\n\tFurther information: {}", chunk), NoticeLevel::Error, BiPos::default())?;
+                }
+                Err(())
+            }
         }
     }
 

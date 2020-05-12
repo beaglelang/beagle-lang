@@ -139,8 +139,20 @@ impl std::fmt::Display for Chunk{
                 Some(HIRInstruction::Property) => {
                     let pos = self.read_pos();
                     let mutable = self.read_bool();
+                    let _mutable_pos = self.read_pos();
                     let name = self.read_string();
-                    let typename = self.read_string();
+                    let _name_pos = self.read_pos();
+                    let _type_pos = self.read_pos();
+                    let type_ins = self.read_instruction();
+                    let typename = match &type_ins{
+                        Some(HIRInstruction::Custom) => {
+                            self.read_string().to_string()
+                        }
+                        Some(_) => {
+                            format!("{:?}", type_ins.unwrap())
+                        }
+                        None => return Err(std::fmt::Error::default())
+                    };
                     writeln!(f, "{}{}Property{}{}{}: {}", pos, padding(), if mutable { "Var" } else { "Val" }, padding(), name, typename)?;
                 }
                 Some(HIRInstruction::Integer) => {

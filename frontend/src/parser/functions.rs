@@ -23,16 +23,12 @@ type ParseResult = Result<(), ()>;
 type ChunkResult = Result<Chunk, ()>;
 
 pub fn module(p: &mut Parser) -> ParseResult {
-    let mut chunk = Chunk::new();
-    p.emit_ir_whole(chunk);
     while !p.check(TokenType::Eof) {
         if let Err(()) = declaration_or_statement(p) {
             return Err(());
         }
         // p.advance().unwrap();
     }
-    let mut end_chunk = Chunk::new();
-    p.emit_ir_whole(end_chunk);
     Ok(())
 }
 
@@ -106,6 +102,7 @@ pub(crate) fn property(p: &mut Parser) -> ParseResult {
     };
 
     chunk.write_string(name.clone());
+    chunk.write_pos(p.current_token().pos);
     if p.check_consume(TokenType::Colon) {
         if let Ok(t) = type_(p){
             chunk.write_chunk(t);
@@ -184,12 +181,12 @@ pub(crate) fn function(p: &mut Parser) -> ParseResult {
     }
     if p.check(TokenType::LParen){
         loop{
-            let mut param_chunk = Chunk::new();
-            param_chunk.write_instruction(HIRInstruction::FnParam);
             if p.check(TokenType::RParen){
                 chunk.write_instruction(HIRInstruction::EndParams);
                 break;
             }
+            let mut param_chunk = Chunk::new();
+            param_chunk.write_instruction(HIRInstruction::FnParam);
             let loc = p.next_token().pos;
             let param_name = match p.consume(TokenType::Identifier) {
                 Ok(TokenData::String(s)) => (*s).to_string(),
@@ -217,10 +214,10 @@ pub(crate) fn function(p: &mut Parser) -> ParseResult {
         let retype_chunk = type_(p)?;
         chunk.write_chunk(retype_chunk);
     }else{
+        chunk.write_pos(p.current_token().pos);
         chunk.write_instruction(HIRInstruction::Unknown);
     }
 
-    chunk.write_pos(p.current_token().pos);
     p.emit_ir_whole(chunk);
 
     if p.consume(TokenType::LCurly).is_err(){
@@ -318,9 +315,9 @@ pub(crate) fn local_var(p: &mut Parser) -> ParseResult {
     } else {
         p.advance()
             .expect("Failed to advance parser to next token.");
-        chunk.write_str("Unknown");
+        chunk.write_pos(p.current_token().pos);
+        chunk.write_instruction(HIRInstruction::Unknown);
     }
-    chunk.write_pos(p.current_token().pos);
     p.emit_ir_whole(chunk);
 
     if !p.check_consume(TokenType::Equal) {
