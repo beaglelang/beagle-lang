@@ -19,6 +19,8 @@ use ir_traits::{
     WriteInstruction,
 };
 
+use std::cell::RefCell;
+
 use futures::executor::ThreadPool;
 
 use core::pos::BiPos as Position;
@@ -137,7 +139,7 @@ struct Module{
 #[derive(Debug, Clone)]
 struct Property{
     ident: Identifier,
-    ty: Ty,
+    ty: RefCell<Ty>,
     expr: Expr,
     pos: BiPos,
     mutable: Mutability,
@@ -146,7 +148,7 @@ struct Property{
 #[derive(Debug, Clone)]
 struct Local{
     ident: Identifier,
-    ty: Ty,
+    ty: RefCell<Ty>,
     expr: Expr,
     pos: BiPos,
     mutable: Mutability
@@ -164,15 +166,15 @@ struct Identifier{
     pos: BiPos,
 }
 
-impl<'a> Check<'a> for Local{
-    fn check(&self, analyzer: &TypeckAnalyzer) -> Result<(), ()> {
-        if &self.ty == self.expr.get_ty(){
-            return Ok(())
-        }
-        analyzer.emit_type_error(self.ty.clone(), self.expr.get_ty().clone());
-        Err(())
-    }
-}
+// impl<'a> Check<'a> for Local{
+//     fn check(&self, analyzer: &TypeckAnalyzer) -> Result<(), ()> {
+//         if &self.ty.into_inner() == self.expr.get_ty(){
+//             return Ok(())
+//         }
+//         analyzer.emit_type_error(self.ty.into_inner().clone(), self.expr.get_ty().clone());
+//         Err(())
+//     }
+// }
 
 #[derive(Debug, Clone)]
 enum StatementKind{
@@ -279,6 +281,100 @@ impl<'a> Typeck{
         Ok(())
     }
 
+    fn check_types(&self) -> Result<(),()>{
+        for elem in self.ty_analyzer.elements.iter(){
+            match &elem.statement.kind{
+                StatementKind::Property(property) => {
+                    let ty = &property.ty;
+                    let expr = &property.expr;
+                    match expr.kind.as_ref(){
+                        ExprElement::Value(value) => {
+                            let ty_inner = ty.clone().into_inner();
+                            if ty_inner.ident == "Unknown"{
+                                property.ty.replace(Ty{
+                                    ident: value.ty.ident.clone(),
+                                    pos: ty_inner.pos,
+                                });
+                                continue;
+                            }
+                            if ty.clone().into_inner() != value.ty{
+                                self.emit_notice(format!(
+                                    "Expect an assignment of type {:?} but instead got {:?}", 
+                                    ty,
+                                    value.ty
+                                ), NoticeLevel::Error, BiPos{
+                                    start: property.pos.start,
+                                    end: expr.pos.end
+                                })?;
+                            }
+                        }
+                        _ => self.emit_notice(format!(
+                            "Compound expressions not yet implemented"
+                        ), NoticeLevel::Error, expr.pos)?,
+                    }
+                },
+                StatementKind::Fun(fun) => {
+                    let ty = &fun.ty;
+                    for statement in fun.body.iter(){
+                        match &statement.kind{
+                            StatementKind::TerminalRet(expr) => {
+                                match expr.kind.as_ref(){
+                                    ExprElement::Value(value) => {
+                                        if *ty != value.ty{
+                                            self.emit_notice(format!(
+                                                "Expect an assignment of type {:?} but instead got {:?}", 
+                                                ty,
+                                                value.ty
+                                            ), NoticeLevel::Error, BiPos{
+                                                start: fun.pos.start,
+                                                end: expr.pos.end
+                                            })?;
+                                        }
+                                    }
+                                    _ => self.emit_notice(format!(
+                                        "Compound expressions not yet implemented"
+                                    ), NoticeLevel::Error, expr.pos)?,
+                                }
+                            }
+                            StatementKind::Local(local) => {
+                                let ty = local.ty.clone();
+                                let expr = &local.expr;
+                                match expr.kind.as_ref(){
+                                    ExprElement::Value(value) => {
+                                        let ty_inner = ty.clone().into_inner();
+                                        if ty_inner.ident == "Unknown"{
+                                            local.ty.replace(Ty{
+                                                ident: value.ty.ident.clone(),
+                                                pos: ty_inner.pos,
+                                            });
+                                            continue;
+                                        }
+                                        if ty.clone().into_inner() != value.ty{
+                                            self.emit_notice(format!(
+                                                "Expect an assignment of type {:?} but instead got {:?}", 
+                                                ty,
+                                                value.ty
+                                            ), NoticeLevel::Error, BiPos{
+                                                start: local.pos.start,
+                                                end: expr.pos.end
+                                            })?;
+                                        }
+                                    }
+                                    _ => self.emit_notice(format!(
+                                        "Compound expressions not yet implemented"
+                                    ), NoticeLevel::Error, expr.pos)?,
+                                }
+                            }
+                            _ => unimplemented!()
+                        }
+                    }
+                }
+                _ => unimplemented!()
+            }
+        }
+        Ok(())
+    }
+
     ///We need to keep track of the expression chunk and return it after we type check it.
     fn load_expression(&self, chunk: Chunk) -> Result<Expr,()>{
         let ins: Option<HIRInstruction> = chunk.read_instruction();
@@ -375,7 +471,7 @@ impl<'a> Typeck{
                 ident: name.clone(),
                 pos: name_pos,
             },
-            ty: Ty{
+            ty: RefCell::new(Ty{
                 ident: if typename.is_some(){
                     typename.unwrap()
                 }else{
@@ -392,7 +488,7 @@ impl<'a> Typeck{
                     }
                 },
                 pos: pos.clone(),
-            },
+            }),
             expr,
             pos,
             mutable: Mutability{
@@ -547,10 +643,10 @@ impl<'a> Typeck{
                     pos: name_pos,
                 },
                 pos,
-                ty: Ty{
+                ty: RefCell::new(Ty{
                     ident: typename,
                     pos: type_pos
-                },
+                }),
                 expr,
                 mutable: Mutability{
                     mutable,
@@ -632,8 +728,12 @@ impl<'a> Typeck{
             return Err("An error occurred while loading bytecode into type analyzer".to_owned())
         }
         
-        for el in typeck.ty_analyzer.elements.iter(){
-            println!("{:?}", el);
+        if typeck.check_types().is_err(){
+            return Err("An erro occurred during type checking".to_owned())
+        }
+
+        for elem in typeck.ty_analyzer.elements.iter(){
+            println!("{:?}", elem)
         }
 
         typeck.typeck_tx.send(None).unwrap();
