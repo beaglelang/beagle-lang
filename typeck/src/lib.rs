@@ -22,6 +22,7 @@ mod properties;
 mod fun;
 mod locals;
 mod modules;
+mod inference;
 
 pub struct TypeckManager{
     thread_pool: ThreadPool,
