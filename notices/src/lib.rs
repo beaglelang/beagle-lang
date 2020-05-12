@@ -1,6 +1,6 @@
 use core::{
     ansi,
-    pos::{BiPos, Position},
+    pos::{BiPos},
 };
 
 #[repr(u8)]
@@ -9,6 +9,9 @@ pub enum NoticeLevel {
     Notice,
     Warning,
     Error,
+    ErrorPrint,
+    WarnPrint,
+    NoticePrint,
     Halt,
 }
 
@@ -24,9 +27,9 @@ pub struct Notice {
 impl Notice {
     pub fn report(self, source: Option<&str>) {
         let (colour, prefix) = match self.level {
-            NoticeLevel::Notice => (ansi::Fg::Cyan, "[-]: "),
-            NoticeLevel::Warning => (ansi::Fg::Yellow, "[*]: "),
-            NoticeLevel::Error => (ansi::Fg::Red, "[!]: "),
+            NoticeLevel::Notice | NoticeLevel::NoticePrint => (ansi::Fg::Cyan, "[-]: "),
+            NoticeLevel::Warning | NoticeLevel::WarnPrint => (ansi::Fg::Yellow, "[*]: "),
+            NoticeLevel::Error | NoticeLevel::ErrorPrint => (ansi::Fg::Red, "[!]: "),
             NoticeLevel::Halt => return,
         };
 
@@ -39,28 +42,31 @@ impl Notice {
             self.msg
         );
 
-        println!("\tat [{}:{}]\n", self.file, self.pos);
+        println!("\tat [{}:({},{}) to ({},{})]\n", self.file, self.pos.start.0 + 1, self.pos.start.1 + 1, self.pos.end.0 + 1, self.pos.end.1 + 1);
 
-        if self.pos.start != Position::default() && self.pos.end != Position::default() {
-            if let Some(src) = source {
-                if let Some((start_line, lines, squiggly)) = self.pos.locate_in_source(src) {
-                    lines.iter().enumerate().for_each(|(i, line)| {
-                        println!(
-                            "\t{}{:4}{} | {}",
-                            colour,
-                            start_line + i,
-                            ansi::Fg::Reset,
-                            line
-                        );
+        if self.level == NoticeLevel::NoticePrint || self.level == NoticeLevel::WarnPrint || self.level == NoticeLevel::ErrorPrint{
+            return;
+        }
 
-                        if i == start_line {
-                            println!("\t{}---- | {}{}", colour, squiggly, ansi::Fg::Reset);
-                        };
-                    });
-                    println!();
-                }
+        if let Some(src) = source {
+            if let Some((start_line, lines, squiggly)) = self.pos.locate_in_source(src) {
+                lines.iter().enumerate().for_each(|(i, line)| {
+                    println!(
+                        "\t{}{:4}{} | {}",
+                        colour,
+                        start_line + i,
+                        ansi::Fg::Reset,
+                        line
+                    );
+
+                    if i == start_line {
+                        println!("\t{}---- | {}{}", colour, squiggly, ansi::Fg::Reset);
+                    };
+                });
+                println!();
             }
         }
+
     }
 }
 
@@ -75,7 +81,7 @@ impl SourceOrigin for BiPos {
         let start_line = if self.start.0 > 3 {
             self.start.0 - 3
         } else {
-            1
+            0
         };
         let lines: Vec<&str> = source
             .lines()
@@ -90,7 +96,7 @@ impl SourceOrigin for BiPos {
         
         let squiggly_line = format!(
             "{}{}",
-            core::padding::padding(" ", self.start.1-1),
+            core::padding::padding(" ", self.start.1),
             if (self.start.1 as usize) < error_line.len() {
                 let length = if self.end.1 - self.start.1 == 0{
                     1

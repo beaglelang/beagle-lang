@@ -27,7 +27,7 @@ pub struct BiPos {
 
 impl std::fmt::Display for BiPos {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{{{{},{}}}, {{{}, {}}}}}", self.start.0 + 1, self.start.1, self.end.0 + 1, self.end.1)
+        write!(f, "{{{{{},{}}}, {{{}, {}}}}}", self.start.0 + 1, self.start.1 + 1, self.end.0 + 1 + 1, self.end.1)
     }
 }
 

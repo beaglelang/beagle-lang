@@ -102,14 +102,15 @@ pub(crate) fn property(p: &mut Parser) -> ParseResult {
     };
 
     chunk.write_string(name.clone());
-    chunk.write_pos(p.current_token().pos);
-    if p.check_consume(TokenType::Colon) {
+    if p.check_consume_next(TokenType::Colon) {
         if let Ok(t) = type_(p){
             chunk.write_chunk(t);
         }else{
             p.emit_notice(p.prev_token().pos, NoticeLevel::Error, "Could not create type signature for property.".to_string());
             return Err(())
         }
+        p.advance()
+            .expect("Failed to advance parser to next token.");
     } else {
         p.advance()
             .expect("Failed to advance parser to next token.");
@@ -215,7 +216,7 @@ pub(crate) fn function(p: &mut Parser) -> ParseResult {
         chunk.write_chunk(retype_chunk);
     }else{
         chunk.write_pos(p.current_token().pos);
-        chunk.write_instruction(HIRInstruction::Unknown);
+        chunk.write_instruction(HIRInstruction::Unit);
     }
 
     p.emit_ir_whole(chunk);
