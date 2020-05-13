@@ -1,14 +1,10 @@
 use std::io::Result;
 use std::path::Path;
 
-pub mod lexer;
-use lexer::tokens;
-
-pub mod parser;
 use ir::{
     Chunk,
 };
-use parser::Parser;
+use lexer::tokens;
 
 use std::sync::mpsc::{
     channel,

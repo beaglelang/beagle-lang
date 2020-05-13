@@ -1,4 +1,16 @@
-use crate::lexer::tokens::{LexerToken, TokenData, TokenType};
+mod statements;
+mod properties;
+mod modules;
+mod functions;
+mod expressions;
+mod type_;
+mod local_statements;
+
+pub trait ParseRule{
+    fn parse(p: &mut Parser) -> Result<(), ()>;
+}
+
+use lexer::tokens::{LexerToken, TokenData, TokenType};
 
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -20,8 +32,6 @@ use std::sync::{Arc, Mutex};
 use notices::{Notice, NoticeLevel};
 
 use futures::executor::ThreadPool;
-
-pub mod functions;
 
 const PREV_TOKEN: usize = 0;
 const CURRENT_TOKEN: usize = 1;
@@ -226,20 +236,18 @@ impl Parser {
         let mut parser = Parser::new(name, ir_tx, token_rx, notice_tx);
         parser.advance().unwrap();
         parser.advance().unwrap();
-        match functions::module(&mut parser) {
-            Ok(()) => {
-                // parser.emit_notice(Position::default(), NoticeLevel::Halt, "Halt".to_string());
-                if parser.ir_tx.lock().unwrap().send(None).is_err(){
-                    return Ok(())
-                }
-                return Ok(());
-            }
-            Err(_) => {
+        while !parser.check(TokenType::Eof) {
+            if let Err(()) = statements::StatementParser::parse(&mut parser) {
                 if parser.ir_tx.lock().unwrap().send(None).is_err(){
                     return Err("An error occurred while parsing module".to_string())
                 }
                 return Err("An error occurred while parsing module".to_string());
             }
         }
+        if parser.ir_tx.lock().unwrap().send(None).is_err(){
+            return Ok(())
+        }
+        Ok(())
     }
 }
+
