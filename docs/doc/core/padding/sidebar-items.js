@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["padding","Creates padding with the string and count provided"],["padding_until",""]],"struct":[["Padding","A String wrapper that repeats itself count times when converted into a String"]]});
