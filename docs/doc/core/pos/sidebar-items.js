@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["BiPos","A position consisting of two positions. This is for tracking start and end for complex data."],["Position",""]]});
