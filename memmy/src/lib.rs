@@ -74,7 +74,12 @@ impl MemmyGenerator{
     #[allow(dead_code)]
     fn determine_alloc_size(&mut self, chunk: &mut Chunk) -> Option<(usize, Option<Chunk>)>{
         let mut ret_chunk = Chunk::new();
-        let pos = chunk.read_pos();
+        let pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(_) => {
+                return None
+            }
+        };
         match FromPrimitive::from_u8(chunk.get_current()){
             Some(HIRInstruction::Float) => {
                 ret_chunk.write_instruction(MIRInstructions::Float);
@@ -109,52 +114,97 @@ impl MemmyGenerator{
     }
 
     fn hir_2_mir(&mut self, chunk: &mut Chunk) -> Result<Chunk, ()>{
-        let pos = chunk.read_pos();
+        let pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(_) => {
+                return Err(())
+            }
+        };
         let mut new_chunk = Chunk::new();
         chunk.advance();
         match FromPrimitive::from_u8(chunk.get_current()){
             Some(HIRInstruction::Bool) => {
                 new_chunk.write_instruction(MIRInstructions::Bool);
                 chunk.advance();
-                let pos = chunk.read_pos();
+                let pos = match chunk.read_pos(){
+                    Ok(pos) => pos,
+                    Err(_) => {
+                        return Err(())
+                    }
+                };
                 new_chunk.write_pos(pos);
                 let value = chunk.read_bool();
                 new_chunk.write_bool(value);
                 chunk.advance();
-                let vpos = chunk.read_pos();
+                let vpos = match chunk.read_pos(){
+                    Ok(pos) => pos,
+                    Err(_) => {
+                        return Err(())
+                    }
+                };
                 new_chunk.write_pos(vpos);
             }
             Some(HIRInstruction::Integer) => {
                 new_chunk.write_instruction(MIRInstructions::Integer);
                 chunk.advance();
-                let pos = chunk.read_pos();
+                let pos = match chunk.read_pos(){
+                    Ok(pos) => pos,
+                    Err(_) => {
+                        return Err(())
+                    }
+                };
                 new_chunk.write_pos(pos);
                 let value = chunk.read_int();
                 new_chunk.write_int(value);
                 chunk.advance();
-                let vpos = chunk.read_pos();
+                let vpos = match chunk.read_pos(){
+                    Ok(pos) => pos,
+                    Err(_) => {
+                        return Err(())
+                    }
+                };
                 new_chunk.write_pos(vpos);
             }
             Some(HIRInstruction::Float) => {
                 new_chunk.write_instruction(MIRInstructions::Float);
                 chunk.advance();
-                let pos = chunk.read_pos();
+                let pos = match chunk.read_pos(){
+                    Ok(pos) => pos,
+                    Err(_) => {
+                        return Err(())
+                    }
+                };
                 new_chunk.write_pos(pos);
                 let value = chunk.read_float();
                 new_chunk.write_float(value);
                 chunk.advance();
-                let vpos = chunk.read_pos();
+                let vpos = match chunk.read_pos(){
+                    Ok(pos) => pos,
+                    Err(_) => {
+                        return Err(())
+                    }
+                };
                 new_chunk.write_pos(vpos);
             }
             Some(HIRInstruction::String) => {
                 new_chunk.write_instruction(MIRInstructions::String);
                 chunk.advance();
-                let pos = chunk.read_pos();
+                let pos = match chunk.read_pos(){
+                    Ok(pos) => pos,
+                    Err(_) => {
+                        return Err(())
+                    }
+                };
                 new_chunk.write_pos(pos);
                 let value = chunk.read_string();
                 new_chunk.write_str(value);
                 chunk.advance();
-                let vpos = chunk.read_pos();
+                let vpos = match chunk.read_pos(){
+                    Ok(pos) => pos,
+                    Err(_) => {
+                        return Err(())
+                    }
+                };
                 new_chunk.write_pos(vpos);
             }
             _ => {
@@ -175,11 +225,21 @@ impl MemmyGenerator{
             let name = chunk.read_string();
             header.write_str(name);
         }else{
-            let pos = chunk.read_pos();
+            let pos = match chunk.read_pos(){
+                Ok(pos) => pos,
+                Err(_) => {
+                    return Err(())
+                }
+            };
             self.emit_error(format!("Expected an Fn HIR instruction, instead got {}", chunk.get_current()), pos)?;
             return Err(())
         }
-        let pos = chunk.read_pos();
+        let pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(_) => {
+                return Err(())
+            }
+        };
         header.write_pos(pos);
         chunk.advance();
         let name = chunk.read_string();
@@ -197,17 +257,32 @@ impl MemmyGenerator{
                 Some(HIRInstruction::LocalVar) => {
                     chunk.advance();
                     //Get the position of the let keyword
-                    let var_pos = chunk.read_pos();
+                    let var_pos = match chunk.read_pos(){
+                        Ok(pos) => pos,
+                        Err(_) => {
+                            return Err(())
+                        }
+                    };
                     chunk.advance();
                     //Get the anem
                     let name = chunk.read_string().to_owned();
                     chunk.advance();
                     //Get the position of the name
-                    let name_pos = chunk.read_pos();
+                    let name_pos = match chunk.read_pos(){
+                        Ok(pos) => pos,
+                        Err(_) => {
+                            return Err(())
+                        }
+                    };
                     //Mutable flag
                     let mutable = chunk.read_bool();
                     chunk.advance();
-                    let mut_pos = chunk.read_pos();
+                    let mut_pos = match chunk.read_pos(){
+                        Ok(pos) => pos,
+                        Err(_) => {
+                            return Err(())
+                        }
+                    };
                     //Determine the size of the object being allocated
                     let size = if let Some(size) = self.determine_alloc_size(chunk){
                         size
@@ -232,17 +307,32 @@ impl MemmyGenerator{
                 Some(HIRInstruction::Property) => {
                     chunk.advance();
                     //Get the position of the let keyword
-                    let var_pos = chunk.read_pos();
+                    let var_pos = match chunk.read_pos(){
+                        Ok(pos) => pos,
+                        Err(_) => {
+                            return Err(())
+                        }
+                    };
                     chunk.advance();
                     //Get the anem
                     let name = chunk.read_string().to_owned();
                     chunk.advance();
                     //Get the position of the name
-                    let name_pos = chunk.read_pos();
+                    let name_pos = match chunk.read_pos(){
+                        Ok(pos) => pos,
+                        Err(_) => {
+                            return Err(())
+                        }
+                    };
                     //Mutable flag
                     let mutable = chunk.read_bool();
                     chunk.advance();
-                    let mut_pos = chunk.read_pos();
+                    let mut_pos = match chunk.read_pos(){
+                        Ok(pos) => pos,
+                        Err(_) => {
+                            return Err(())
+                        }
+                    };
                     //Determine the size of the object being allocated
                     let size = if let Some(size) = self.determine_alloc_size(chunk){
                         size

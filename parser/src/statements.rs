@@ -26,7 +26,7 @@ impl ParseRule for StatementParser{
                 parser.emit_notice(
                     token.pos,
                     NoticeLevel::Error,
-                    format!("Unexpected token found: {:?}", token).to_string(),
+                    format!("Unexpected token found: {}", token).to_string(),
                 );
                 return Err(());
             }

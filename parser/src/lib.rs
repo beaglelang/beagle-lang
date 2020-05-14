@@ -6,9 +6,7 @@ mod expressions;
 mod type_;
 mod local_statements;
 
-pub trait ParseRule{
-    fn parse(p: &mut Parser) -> Result<(), ()>;
-}
+
 
 use lexer::tokens::{LexerToken, TokenData, TokenType};
 
@@ -32,6 +30,29 @@ use std::sync::{Arc, Mutex};
 use notices::{Notice, NoticeLevel};
 
 use futures::executor::ThreadPool;
+
+pub trait ParseRule{
+    fn parse(p: &mut Parser) -> Result<(), ()>;
+}
+
+pub trait TryParse{
+    fn try_parse(p: &mut Parser) -> Result<Chunk, ParseError>;
+}
+
+pub struct ParseError{
+    cause: Option<Box<ParseError>>,
+    msg: String,
+    pos: Position,
+}
+
+impl ParseError{
+    fn emit_notice(&self, parser: &Parser){
+        if let Some(cause) = &self.cause{
+            cause.emit_notice(parser);
+        }
+        parser.emit_notice(self.pos, NoticeLevel::Error, self.msg.clone());
+    }
+}
 
 const PREV_TOKEN: usize = 0;
 const CURRENT_TOKEN: usize = 1;
@@ -64,7 +85,7 @@ impl ParseManager{
                 let notice = Notice{
                     from: "Parser".to_string(),
                     file: module_name.clone(),
-                    level: NoticeLevel::Error,
+                    level: NoticeLevel::ErrorPrint,
                     msg,
                     pos: Position::default()
                 };

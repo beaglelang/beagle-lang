@@ -31,7 +31,7 @@ pub enum StatementKind{
 impl super::Load for Statement{
     type Output = Statement;
 
-    fn load(chunk: Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
         match chunk.read_instruction(){
             Some(HIRInstruction::Property) => match Property::load(chunk, typeck){
                 Ok(property) => {

@@ -56,6 +56,16 @@ impl<'a> super::Check<'a> for Local{
                     })?;
                 }
             }
+            ExprElement::Binary(_, left, right) => {
+                if left.ty.ident != right.ty.ident{
+                    let error_pos = BiPos{
+                        start: left.pos.start,
+                        end: right.pos.end
+                    };
+                    typeck.emit_notice(format!("Left hand expression of binary operation is of type {} while right hand is of type {}. This is incorrect.\n\tEither change the left to match the right or change the right to match the left.", left.ty.ident, right.ty.ident), NoticeLevel::Error, error_pos)?;
+                    return Err(())
+                }
+            }
             _ => typeck.emit_notice(format!(
                 "Compound expressions not yet implemented"
             ), NoticeLevel::Error, expr.pos)?,
@@ -67,14 +77,38 @@ impl<'a> super::Check<'a> for Local{
 impl super::Load for Local{
     type Output = Local;
 
-    fn load(chunk: Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
-        let pos = chunk.read_pos();
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
+        let pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(msg) => {
+                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
+                return Err(())
+            }
+        };
         let mutable = chunk.read_bool();
-        let mut_pos = chunk.read_pos();
+        let mut_pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(msg) => {
+                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
+                return Err(())
+            }
+        };
         let name = chunk.read_string();
-        let name_pos = chunk.read_pos();
+        let name_pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(msg) => {
+                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
+                return Err(())
+            }
+        };
 
-        let type_pos = chunk.read_pos();
+        let type_pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(msg) => {
+                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
+                return Err(())
+            }
+        };
         let type_ins: Option<HIRInstruction> = chunk.read_instruction();
         let typename = match type_ins{
             Some(type_ins) => {
@@ -96,7 +130,7 @@ impl super::Load for Local{
             typeck.emit_notice(format!("Failed to get HIR chunk for expression while loading property"), NoticeLevel::ErrorPrint, pos)?;
             return Err(())
         };
-        let expr = match Expr::load(expr_chunk, typeck){
+        let expr = match Expr::load(&expr_chunk, typeck){
             Ok(expr) => expr,
             Err(()) => return Err(())
         };

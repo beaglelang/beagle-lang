@@ -2,6 +2,7 @@ use crate::{
     Parser,
     ParseRule,
     ParseContext,
+    TryParse,
     expressions::ExpressionParser,
     type_::TypeParser,
 };
@@ -105,12 +106,11 @@ impl ParseRule for LocalVarParser{
             return Err(());
         }
 
-        if ExpressionParser::parse(parser).is_err() {
-            parser.emit_notice(
-                pos,
-                NoticeLevel::Error,
-                format!("Local variable {} cannot go uninitialized.", name.clone()),
-            );
+        match ExpressionParser::try_parse(parser) {
+            Ok(expr) => parser.emit_ir_whole(expr),
+            Err(cause) => {
+                cause.emit_notice(parser);
+            }
         }
         Ok(())
     }

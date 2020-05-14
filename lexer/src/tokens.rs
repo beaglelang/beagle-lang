@@ -43,6 +43,7 @@ pub enum TokenType {
     Identifier,
     String,
     Number,
+    Decimal,
 
     KwVal,
     KwVar,

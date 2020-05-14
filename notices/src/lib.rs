@@ -54,12 +54,12 @@ impl Notice {
                     println!(
                         "\t{}{:4}{} | {}",
                         colour,
-                        start_line + i,
+                        start_line + i + 1,
                         ansi::Fg::Reset,
                         line
                     );
 
-                    if i == start_line {
+                    if i == self.pos.start.0 - 1 {
                         println!("\t{}---- | {}{}", colour, squiggly, ansi::Fg::Reset);
                     };
                 });
@@ -71,6 +71,7 @@ impl Notice {
 }
 
 pub const TAB_WIDTH: usize = 5;
+const ERR_LINE_OFFSET: usize = 2;
 
 pub trait SourceOrigin {
     fn locate_in_source(self, source: &str) -> Option<(usize, Vec<&str>, String)>;
@@ -78,8 +79,8 @@ pub trait SourceOrigin {
 
 impl SourceOrigin for BiPos {
     fn locate_in_source(self, source: &str) -> Option<(usize, Vec<&str>, String)> {
-        let start_line = if self.start.0 > 3 {
-            self.start.0 - 3
+        let start_line = if self.start.0 >= ERR_LINE_OFFSET {
+            self.start.0 - ERR_LINE_OFFSET
         } else {
             0
         };
@@ -88,25 +89,27 @@ impl SourceOrigin for BiPos {
             .skip(start_line as usize)
             .take(7)
             .collect();
-        let error_line = if lines.len() > 3 {
-            lines[3]
+        let error_line = if lines.len() > ERR_LINE_OFFSET {
+            lines[ERR_LINE_OFFSET]
         } else {
             lines[self.start.0 as usize]
+        };
+        let squiggly_amount = if self.end.1 - self.start.1 == 0{
+            1
+        }else{
+            self.end.1 - self.start.1
+        };
+
+        let squiggly = if (self.start.1 as usize - 1) < error_line.len() {
+            core::padding::padding("^", squiggly_amount).to_string()
+        } else {
+            String::new()
         };
         
         let squiggly_line = format!(
             "{}{}",
-            core::padding::padding(" ", self.start.1),
-            if (self.start.1 as usize) < error_line.len() {
-                let length = if self.end.1 - self.start.1 == 0{
-                    1
-                }else{
-                    self.end.1 - self.start.1
-                };
-                core::padding::padding("^", length).to_string()
-            } else {
-                String::new()
-            }
+            core::padding::padding_until(" ", self.start.1),
+            squiggly
         );
         Some((start_line as usize, lines, squiggly_line))
     }

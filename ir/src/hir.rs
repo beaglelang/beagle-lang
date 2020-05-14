@@ -93,14 +93,26 @@ impl std::fmt::Display for Chunk{
                     writeln!(f, "{}{}EndModule{}{}", pos, padding(), padding(), name)?;
                 }
                 Some(HIRInstruction::Fn) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     let name = self.read_string();
                     writeln!(f, "{}{}Fn{}{}", pos, padding(), padding(), name)?;
                     loop{
                         let ins = self.read_instruction().unwrap();
                         match &ins{
                             HIRInstruction::FnParam => {
-                                let pos = self.read_pos();
+                                let pos = match self.read_pos(){
+                                    Ok(pos) => pos,
+                                    Err(msg) => {
+                                        println!("{}", msg);
+                                        return Err(std::fmt::Error{})
+                                    }
+                                };
                                 let name = self.read_string();
                                 let typename = self.read_string();
                                 writeln!(f, "{}{}FnParam{}{}: {}", pos, padding(), padding(), name, typename)?;
@@ -112,24 +124,54 @@ impl std::fmt::Display for Chunk{
                         }
                     }
                     let typename = self.read_string();
-                    let typename_pos = self.read_pos();
+                    let typename_pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     writeln!(f, "{}{}FnType{}{}", typename_pos, padding(), padding(), typename)?;
                 }
                 Some(HIRInstruction::Block) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     writeln!(f, "{}{}Block", pos, padding())?;
                 }
                 Some(HIRInstruction::EndBlock) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     writeln!(f, "{}{}EndBlock", pos, padding())?;
                 }
                 Some(HIRInstruction::EndFn) => {
                     writeln!(f, "{}{}EndFn", BiPos::default(), padding())?;
                 }
                 Some(HIRInstruction::LocalVar) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     let mutable = self.read_bool();
-                    let _mut_pos = self.read_pos();
+                    let _mut_pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     let name = self.read_string();
                     let _name_pos = self.read_pos();
                     let typename = self.read_string();
@@ -137,12 +179,36 @@ impl std::fmt::Display for Chunk{
                     writeln!(f, "{}{}Local{}{}{}: {}", pos, padding(), if mutable{ "Var" }else{ "Val" }, padding(), name, typename)?;
                 }
                 Some(HIRInstruction::Property) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     let mutable = self.read_bool();
-                    let _mutable_pos = self.read_pos();
+                    let _mutable_pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     let name = self.read_string();
-                    let _name_pos = self.read_pos();
-                    let _type_pos = self.read_pos();
+                    let _name_pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
+                    let _type_pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     let type_ins = self.read_instruction();
                     let typename = match &type_ins{
                         Some(HIRInstruction::Custom) => {
@@ -156,47 +222,107 @@ impl std::fmt::Display for Chunk{
                     writeln!(f, "{}{}Property{}{}{}: {}", pos, padding(), if mutable { "Var" } else { "Val" }, padding(), name, typename)?;
                 }
                 Some(HIRInstruction::Integer) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     let value = self.read_int();
                     writeln!(f, "{}{}Integer{}{}", pos, padding(), padding(), value)?;
                 }
                 Some(HIRInstruction::Float) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     let value = self.read_float();
                     writeln!(f, "{}{}Float{}{}", pos, padding(), padding(), value)?;
                 }
                 Some(HIRInstruction::String) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     let value = self.read_string();
                     writeln!(f, "{}{}String{}{}", pos, padding(), padding(), value)?;
                 }
                 Some(HIRInstruction::Bool) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     let value = self.read_bool();
                     writeln!(f, "{}{}Bool{}{}", pos, padding(), padding(), value)?;
                 }
                 Some(HIRInstruction::Add) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     writeln!(f, "{}{}Add", pos, padding())?;
                 }
                 Some(HIRInstruction::Sub) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     writeln!(f, "{}{}Sub", pos, padding())?;
                 }
                 Some(HIRInstruction::Mult) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     writeln!(f, "{}{}Mult", pos, padding())?;
                 }
                 Some(HIRInstruction::Div) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     writeln!(f, "{}{}Div", pos, padding())?;
                 }
                 Some(HIRInstruction::None) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     writeln!(f, "{}{}None", pos, padding())?;
                 }
                 Some(_) => {
-                    let pos = self.read_pos();
+                    let pos = match self.read_pos(){
+                        Ok(pos) => pos,
+                        Err(msg) => {
+                            println!("{}", msg);
+                            return Err(std::fmt::Error{})
+                        }
+                    };
                     writeln!(f, "{}{}Unknown", pos, padding())?;
                 }
                 None => break,

@@ -58,7 +58,7 @@ impl TypeckManager{
 
 pub trait Load{
     type Output;
-    fn load(chunk: Chunk, typeck: &Typeck) -> Result<Self::Output, ()>;
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -134,7 +134,7 @@ impl<'a> Typeck{
             }else{
                 return Ok(())
             };
-            let statement = match Statement::load(chunk, self){
+            let statement = match Statement::load(&chunk, self){
                 Ok(statement) => statement,
                 Err(()) => return Err(())
             };

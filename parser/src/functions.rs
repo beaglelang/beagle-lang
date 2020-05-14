@@ -111,6 +111,7 @@ impl ParseRule for FunctionParser{
         body_chunk.write_pos(parser.current_token().pos);
         parser.emit_ir_whole(body_chunk);
         while !parser.check_consume(TokenType::RCurly){
+            parser.advance().unwrap();
             if LocalStatementParser::parse(parser).is_err(){
                 return Err(())
             }

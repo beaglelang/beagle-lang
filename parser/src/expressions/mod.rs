@@ -1,46 +1,99 @@
 use super::{
     Parser,
-    ParseRule,
+    TryParse,
+    ParseError,
 };
 
 use ir::{
     Chunk,
-    hir::HIRInstruction
 };
 
-use ir_traits::WriteInstruction;
+use lexer::tokens::{
+    TokenType,
+};
 
-use lexer::tokens::TokenData;
+mod binary;
+mod literal;
 
 pub struct ExpressionParser;
 
-impl ParseRule for ExpressionParser{
-    fn parse(parser: &mut Parser) -> Result<(),()>{
-        let token = parser.current_token();
+impl TryParse for ExpressionParser{
+    fn try_parse(parser: &mut Parser) -> Result<Chunk,ParseError>{
         let mut chunk = Chunk::new();
-        match &token.data{
-            TokenData::Float(f) => {
-                chunk.write_instruction(HIRInstruction::Float);
-                chunk.write_pos(token.pos);
-                chunk.write_float(*f);
+        let next = parser.next_token();
+        match &next.type_{
+            TokenType::Plus => {
+                match binary::AddParser::try_parse(parser){
+                    Ok(expr) => {
+                        chunk.write_chunk(expr);
+                    }
+                    Err(msg) => {
+                        let pos = parser.current_token().pos;
+                        return Err(ParseError{
+                            cause: Some(Box::new(msg)),
+                            msg: format!("An error occurred while trying to parse add expression"),
+                            pos,
+                        })
+                    }
+                }
             }
-            TokenData::Integer(i) => {
-                chunk.write_instruction(HIRInstruction::Integer);
-                chunk.write_pos(token.pos);
-                chunk.write_int(*i);
+            TokenType::Minus => {
+                match binary::SubParser::try_parse(parser){
+                    Ok(expr) => {
+                        chunk.write_chunk(expr);
+                    }
+                    Err(msg) => {
+                        return Err(ParseError{
+                            cause: Some(Box::new(msg)),
+                            msg: format!("An error occurred while trying to parse sub expression"),
+                            pos: parser.current_token().pos,
+                        })
+                    }
+                }
             }
-            TokenData::String(s) => {
-                chunk.write_instruction(HIRInstruction::String);
-                chunk.write_pos(token.pos);
-                chunk.write_string(s.clone());
+            TokenType::Star => {
+                match binary::MulParser::try_parse(parser){
+                    Ok(expr) => {
+                        chunk.write_chunk(expr);
+                    }
+                    Err(msg) => {
+                        return Err(ParseError{
+                            cause: Some(Box::new(msg)),
+                            msg: format!("An error occurred while trying to parse multiply expression"),
+                            pos: parser.current_token().pos,
+                        })
+                    }
+                }
             }
-            TokenData::None => {
-                chunk.write_instruction(HIRInstruction::None);
-                chunk.write_pos(token.pos);
+            TokenType::Slash => {
+                match binary::DivParser::try_parse(parser){
+                    Ok(expr) => {
+                        chunk.write_chunk(expr);
+                    }
+                    Err(msg) => {
+                        return Err(ParseError{
+                            cause: Some(Box::new(msg)),
+                            msg: format!("An error occurred while trying to parse division expression"),
+                            pos: parser.current_token().pos,
+                        })
+                    }
+                }
             }
+            _ => {
+                match literal::LiteralParser::try_parse(parser){
+                    Ok(literal) => chunk.write_chunk(literal),
+                    Err(msg) => {
+                        let pos = parser.next_token().pos;
+                        return Err(ParseError{
+                            cause: Some(Box::new(msg)),
+                            msg: format!("An error occurred while trying to parse literal"),
+                            pos,
+                        })
+                    }
+                }
+            }
+            
         }
-        parser.emit_ir_whole(chunk);
-        parser.advance().unwrap();
-        Ok(())
+        Ok(chunk)
     }
 }

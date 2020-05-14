@@ -1,6 +1,7 @@
 use super::{
     ParseRule,
     Parser,
+    TryParse,
     expressions::ExpressionParser,
     type_::TypeParser,
 };
@@ -101,7 +102,15 @@ impl ParseRule for PropertyParser{
 
         parser.emit_ir_whole(chunk);
         
-        ExpressionParser::parse(parser).expect("Could not parse expression.");
+        match ExpressionParser::try_parse(parser){
+            Ok(expr) => {
+                parser.emit_ir_whole(expr);
+            }
+            Err(msg) => {
+                msg.emit_notice(parser);
+            }
+        }
+        parser.advance().unwrap();
         Ok(())
     }
 }

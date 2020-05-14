@@ -15,7 +15,6 @@ pub struct LocalStatementParser;
 
 impl ParseRule for LocalStatementParser{
     fn parse(parser: &mut Parser) -> Result<(),()>{
-        parser.advance().unwrap();
         match parser.current_token().type_{
             TokenType::RCurly => return Ok(()),
             TokenType::KwLet => LocalVarParser::parse(parser)?,

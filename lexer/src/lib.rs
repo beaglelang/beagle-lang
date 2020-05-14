@@ -25,6 +25,7 @@ lazy_static! {
         m.insert("mut", tokens::TokenType::KwMut);
         m.insert("native", tokens::TokenType::KwNative);
         m.insert("fun", tokens::TokenType::KwFun);
+        m.insert("None", tokens::TokenType::KwNone);
         m
     };
 }

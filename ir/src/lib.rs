@@ -86,15 +86,27 @@ impl Chunk{
         self.write_usize(bipos.end.1);
     }
 
-    pub fn read_pos(&self) -> BiPos{
-        let start_line = self.read_usize();
-        let start_col = self.read_usize();
-        let end_line = self.read_usize();
-        let end_col = self.read_usize();
-        BiPos{
+    pub fn read_pos(&self) -> Result<BiPos, String>{
+        let start_line = match self.read_usize(){
+            Ok(start_line) => start_line,
+            Err(msg) => return Err(msg)
+        };
+        let start_col = match self.read_usize(){
+            Ok(start_col) => start_col,
+            Err(msg) => return Err(msg)
+        };
+        let end_line = match self.read_usize(){
+            Ok(end_line) => end_line,
+            Err(msg) => return Err(msg)
+        };
+        let end_col = match self.read_usize(){
+            Ok(end_col) => end_col,
+            Err(msg) => return Err(msg)
+        };
+        Ok(BiPos{
             start: Position(start_line, start_col),
             end: Position(end_line, end_col)
-        }
+        })
     }
 
     pub fn read_float(&self) -> f32{
@@ -129,7 +141,7 @@ impl Chunk{
         self.code.append(str.as_bytes().to_vec().as_mut())
     }
 
-    pub fn read_usize(&self) -> usize{
+    pub fn read_usize(&self) -> Result<usize, String>{
         self.read_usize_at(self.ins_ptr.clone().into_inner())
     }
 
@@ -138,10 +150,13 @@ impl Chunk{
         self.ins_ptr.replace(old + amount);
     }
 
-    pub fn read_usize_at(&self, idx: usize) -> usize{
+    pub fn read_usize_at(&self, idx: usize) -> Result<usize, String>{
+        if self.code.len() < idx || self.code.len() < idx+8{
+            return Err(format!("Cannot read usize from chunk cause chunk length is less than given idx: {}", idx))
+        }
         let float = usize::from_be_bytes(unsafe { *(self.code[idx..idx+8].as_ptr() as *const [u8; 8]) });
         self.inc_ins_ptr(std::mem::size_of::<usize>());
-        return float
+        return Ok(float)
     }
 
     pub fn write_usize(&mut self, size: usize){

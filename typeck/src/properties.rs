@@ -9,7 +9,9 @@ use super::{
     Typeck,
 };
 
-use core::pos::BiPos;
+use core::pos::{
+    BiPos,
+};
 
 use std::cell::RefCell;
 
@@ -34,11 +36,23 @@ pub struct Property{
 impl super::Load for Property{
     type Output = Property;
 
-    fn load(chunk: Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
-        let pos = chunk.read_pos();
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
+        let pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(msg) => {
+                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
+                return Err(())
+            }
+        };
         let mutable = chunk.read_bool();
         let name = chunk.read_string().to_string();
-        let name_pos = chunk.read_pos();
+        let name_pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(msg) => {
+                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
+                return Err(())
+            }
+        };
         let current_type: HIRInstruction = chunk.read_instruction().unwrap();
         let typename = if current_type == HIRInstruction::Custom{
             let typename = chunk.read_string().to_owned();
@@ -53,7 +67,7 @@ impl super::Load for Property{
             return Err(())
         };
         
-        let expr = match Expr::load(expr_chunk, typeck){
+        let expr = match Expr::load(&expr_chunk, typeck){
             Ok(expr) => expr,
             Err(()) => return Err(())
         };
@@ -114,6 +128,16 @@ impl<'a> super::Check<'a> for Property{
                         start: self.pos.start,
                         end: expr.pos.end
                     })?;
+                    return Err(())
+                }
+            }
+            ExprElement::Binary(_, left, right) => {
+                if left.ty.ident != right.ty.ident{
+                    let error_pos = BiPos{
+                        start: left.pos.start,
+                        end: right.pos.end
+                    };
+                    typeck.emit_notice(format!("Left hand expression of binary operation is of type {} while right hand is of type {}. This is incorrect.\n\tEither change the left to match the right or change the right to match the left.", left.ty.ident, right.ty.ident), NoticeLevel::Error, error_pos)?;
                     return Err(())
                 }
             }
