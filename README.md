@@ -1,4 +1,6 @@
 # Beagle Programming Language
+![build status](https://travis-ci.org/beaglelang/beagle-lang.svg?branch=master)
+
 Beagle is a new mid-level programming language whose sole mission is to provide high level programmers the ability to reach to low level at will, without reprocusions or a garbage collector, while maintaining memory safety and efficiency.
 
 ## How?
