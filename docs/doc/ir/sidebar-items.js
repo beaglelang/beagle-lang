@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Constant",""]],"mod":[["hir",""],["mir",""]],"struct":[["Chunk",""],["Module",""]]});

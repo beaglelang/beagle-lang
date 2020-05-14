@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["debug_metadata_version","Gets the version of debug metadata produced by the current LLVM version."]],"struct":[["DebugInfoBuilder",""]]});

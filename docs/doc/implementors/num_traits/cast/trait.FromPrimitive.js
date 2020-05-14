@@ -1,0 +1,4 @@
+(function() {var implementors = {};
+implementors["ir"] = [{"text":"impl <a class=\"trait\" href=\"num_traits/cast/trait.FromPrimitive.html\" title=\"trait num_traits::cast::FromPrimitive\">FromPrimitive</a> for <a class=\"enum\" href=\"ir/hir/enum.HIRInstruction.html\" title=\"enum ir::hir::HIRInstruction\">HIRInstruction</a>","synthetic":false,"types":["ir::hir::HIRInstruction"]},{"text":"impl <a class=\"trait\" href=\"num_traits/cast/trait.FromPrimitive.html\" title=\"trait num_traits::cast::FromPrimitive\">FromPrimitive</a> for <a class=\"enum\" href=\"ir/mir/enum.MIRInstructions.html\" title=\"enum ir::mir::MIRInstructions\">MIRInstructions</a>","synthetic":false,"types":["ir::mir::MIRInstructions"]}];
+implementors["num_traits"] = [];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
