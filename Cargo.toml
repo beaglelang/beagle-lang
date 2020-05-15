@@ -10,7 +10,7 @@ edition = "2018"
 members = ["frontend", "lexer", "parser", "ir", "notices", "typeck", "memmy", "symbol_table", "ir_derive", "ir_traits"]
 
 [dependencies]
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm9-0" }
+#inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm9-0" }
 futures = { version = "*", features = ["thread-pool"] }
 
 ir = { path = "ir", version = "0.0.1" }
