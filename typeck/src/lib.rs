@@ -1,6 +1,9 @@
 use ir::{
     Chunk,
+    hir::HIRInstruction,
 };
+
+use ir_traits::WriteInstruction;
 
 use notices::*;
 use std::sync::{
@@ -23,11 +26,12 @@ mod fun;
 mod locals;
 mod modules;
 mod inference;
+mod ident;
 
 ///A global manager for all [typeck]s. All typeck's are added to a threadpool upon a call to [enqueueModule].
 ///A single notice send channel is shared between all typeck's.
 ///The flow of notices currently is temporary but looks something like this
-///```
+///```norust
 ///           ^
 ///           |
 ///     TypeckManager
@@ -102,6 +106,10 @@ pub trait Load{
     fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()>;
 }
 
+pub trait Unload{
+    fn unload(&self) -> Result<Chunk, ()>;
+}
+
 ///An element of a [TyValue]. 
 ///This has to do with primitive data since primitives are built in. This also allows for convenience when checking for non-primitives types.
 ///If you have a class called `A`, then the TyValueElement for `A` would be `TyValueElement::Custom("A"). This will then be used during type checking to ensure that
@@ -120,6 +128,38 @@ pub enum TyValueElement{
     Unit
 }
 
+impl Unload for TyValueElement{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        match self{
+            TyValueElement::Bool(b) => {
+                chunk.write_instruction(HIRInstruction::Bool);
+                chunk.write_bool(*b);
+            }
+            TyValueElement::Integer(i) => {
+                chunk.write_instruction(HIRInstruction::Integer);
+                chunk.write_int(*i);
+            }
+            TyValueElement::Float(f) => {
+                chunk.write_instruction(HIRInstruction::Float);
+                chunk.write_float(*f);
+            }
+            TyValueElement::String(s) => {
+                chunk.write_instruction(HIRInstruction::String);
+                chunk.write_string(s.clone());
+            }
+            TyValueElement::Custom(name) => {
+                chunk.write_instruction(HIRInstruction::Custom);
+                chunk.write_string(name.clone());
+            }
+            TyValueElement::Unit => {
+                chunk.write_instruction(HIRInstruction::Unit);
+            }
+        }
+        Ok(chunk)
+    }
+}
+
 ///A value from input and it's type.
 ///This can include primitive data such as literals, Unit values (aka, void or nothing), or custom types when parsing Constructors.
 ///See [TyValueElement] for more information.
@@ -127,6 +167,23 @@ pub enum TyValueElement{
 pub struct TyValue{
     ty: Ty,
     elem: TyValueElement
+}
+
+impl Unload for TyValue{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        let ty_chunk = match self.ty.unload(){
+            Ok(chunk) => chunk,
+            Err(_) => return Err(())
+        };
+        chunk.write_chunk(ty_chunk);
+        let tyval_chunk = match self.elem.unload(){
+            Ok(chunk) => chunk,
+            Err(_) => return Err(())
+        };
+        chunk.write_chunk(tyval_chunk);
+        Ok(chunk)
+    }
 }
 
 ///This trait provides an associative function for checking an IR during the `check` phase.
@@ -164,6 +221,15 @@ pub struct Ty{
     pub pos: BiPos
 }
 
+impl Unload for Ty{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        chunk.write_string(self.ident.clone());
+        chunk.write_pos(self.pos);
+        Ok(chunk)
+    }
+}
+
 ///A trait that provides a method called `get_ty` which is a convenience method for quickly getting an IR element's type info.
 pub trait GetTy{
     fn get_ty(&self) -> &Ty;
@@ -177,13 +243,13 @@ pub struct Mutability{
     pub pos: BiPos,
 }
 
-///A part of an IR that contains an identifier.
-#[derive(Debug, Clone)]
-pub struct Identifier{
-    ///The identifier
-    pub ident: String,
-    ///The in source location of the identifier.
-    pub pos: BiPos,
+impl Unload for Mutability{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        chunk.write_bool(self.mutable);
+        chunk.write_pos(self.pos);
+        Ok(chunk)
+    }
 }
 
 ///A single instance of a type checker, thus the shortened name *Typeck*. Each file is given its own Typeck. 
@@ -243,6 +309,24 @@ impl<'a> Typeck{
         }
     }
 
+    fn unload(&self) -> Result<(),()>{
+        let mut module_chunk = Chunk::new();
+        module_chunk.write_instruction(HIRInstruction::Module);
+        module_chunk.write_string(self.module_ir.ident.clone());
+        self.typeck_tx.send(Some(module_chunk)).unwrap();
+        for statement in self.module_ir.statements.iter(){
+            let ch = match statement.unload(){
+                Ok(chunk) => chunk,
+                Err(()) => return Err(())
+            };
+            self.typeck_tx.send(Some(ch)).unwrap();
+        }
+        let mut module_chunk = Chunk::new();
+        module_chunk.write_instruction(HIRInstruction::EndModule);
+        module_chunk.write_string(self.module_ir.ident.clone());
+        Ok(())
+    }
+
     ///This is the start of the entire typeck operation, which creates a new typeck object and procceeds to call it's load phase followed by its check phase.
     pub fn start_checking(module_name: String, ir_rx: Receiver<Option<Chunk>>, notice_tx: Sender<Option<Notice>>, typeck_tx: Sender<Option<Chunk>>) -> Result<(), String>{
         let mut typeck = Self{
@@ -264,8 +348,8 @@ impl<'a> Typeck{
             return Err("An error occurred during type checking".to_owned())
         }
 
-        for elem in typeck.module_ir.statements.iter(){
-            println!("{:#?}", elem)
+        if typeck.unload().is_err(){
+            return Err("An error occurred while unloading typeck.".to_owned())
         }
 
         typeck.typeck_tx.send(None).unwrap();

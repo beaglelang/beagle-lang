@@ -89,12 +89,13 @@ impl Driver {
         // };
 
         let parser_ir_task = async{
+            println!("test");
             while let Ok(Some(chunk)) = typeck_rx.recv() {
-                println!("{}", chunk);
+                println!("{:?}", chunk);
             }
         };
 
-        futures::join!(notice_task, parser_ir_task);
+        futures::join!(parser_ir_task, notice_task);
         
         Ok(Box::new(module))
     }

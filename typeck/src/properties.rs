@@ -1,5 +1,5 @@
 use super::{
-    Identifier,
+    ident::Identifier,
     expressions::{
         Expr,
         ExprElement
@@ -7,6 +7,7 @@ use super::{
     Mutability,
     Ty,
     Typeck,
+    Unload
 };
 
 use core::pos::{
@@ -20,7 +21,10 @@ use ir::{
     hir::HIRInstruction,
 };
 
-use ir_traits::ReadInstruction;
+use ir_traits::{
+    ReadInstruction,
+    WriteInstruction
+};
 
 use notices::NoticeLevel;
 
@@ -146,5 +150,30 @@ impl<'a> super::Check<'a> for Property{
             ), NoticeLevel::Error, expr.pos)?,
         }
         Ok(())
+    }
+}
+
+impl Unload for Property{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        chunk.write_instruction(HIRInstruction::Property);
+        chunk.write_pos(self.pos);
+        match self.ty.clone().into_inner().unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        match self.ident.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        match self.mutable.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        match self.expr.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        Ok(chunk)
     }
 }

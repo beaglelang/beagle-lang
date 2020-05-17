@@ -1,7 +1,8 @@
 language: rust
-# before_install: |-
-#     cargo install llvmenv \
-#     && llvmenv init
+before_install: |-
+    sudo apt-get install 
+    cargo install llvmenv \
+    && llvmenv init
 after_success: |-
   cargo doc \
   && echo '<meta http-equiv=refresh content=0;url=beaglec/index.html>' > target/doc/index.html && \
@@ -9,5 +10,6 @@ after_success: |-
   ghp-import -n target/doc && \
   git push -qf https://${TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git gh-pages
 env:
+  - LLVM_SYS_90_PREFIX=/usr/bin/llvm
   global:
     secure: ZknGCos72K0QOZLnvFlzWxHYjQkgR+0fjNcaXZYWGRRv7f1ZoJTo+X7qfjnMxeqFH0+ShxoxAihTFXU2iLyjX2auItMwoCkQJ2+sxPt8k00ZwjqAldsuuin/YUbY2vvnBLnG4AWYC9Kvipg54HODt75VJ1HSBsRmuhryCzoIgL1ht0xOsPTAOAX/sXimK9XHIv6SocYY/m7U/bFpIa3pQb0UYmDO2tzyDSbkpWq1IDp2CPgY5nSxNuMAbdXbwkD7z77AIWvyoSB14o6o9EApmQ7FLclf0fyOn6S7cPgY8inSr2zfPQLkzMsgvb3lgV4WXGFDiKp+8p4s0CevcMRAwnaOkrS0gRob1hazFKYteauGQOoTzLNeYE52yuyTbbSRNsOiKQCCeC8wGpYHggykMAxEXc6JuGXP+N44m+I5v8EpclavbbgrDnWPFIigdn8iv+63S9w54x1DLqtJzIfDM6CQmi019ddNmwmKLlw6nYOdiQpAz2kjWepvE0+9t182y18iB1ZqSlJmju+9F1CbOFHClx+335avHNwbrgRgAlbja4Y7MOgHMwvY+J9N7sUngBFe/NR9mAgFg0PG4SZuCj/2vkyOwpmk0uIxovO609vd5rZ5h5L+VlEMDOLgaruZrXHH7x+aBV3/87H4unVKfZe/WFWcYKkdJhZ5nMqrlH0=

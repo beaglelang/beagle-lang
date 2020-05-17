@@ -56,6 +56,7 @@ impl ParseRule for FunctionParser{
             }
         };
         chunk.write_string(name);
+        chunk.write_pos(parser.current_token().pos);
         if parser.advance().is_err(){
             return Err(())
         }

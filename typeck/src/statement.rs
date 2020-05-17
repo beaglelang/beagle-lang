@@ -82,3 +82,25 @@ impl<'a> super::Check<'a> for Statement{
         }
     }
 }
+
+impl super::Unload for Statement{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        match &self.kind{
+            StatementKind::Fun(fun) => match fun.unload(){
+                Ok(ch) => chunk.write_chunk(ch),
+                Err(()) => return Err(())
+            },
+            StatementKind::Local(local) => match local.unload(){
+                Ok(ch) => chunk.write_chunk(ch),
+                Err(()) => return Err(())
+            },
+            StatementKind::Property(prop) => match prop.unload(){
+                Ok(ch) => chunk.write_chunk(ch),
+                Err(()) => return Err(())
+            },
+        }
+        chunk.write_pos(self.pos);
+        Ok(chunk)
+    }
+}

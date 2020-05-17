@@ -3,8 +3,9 @@ use super::{
         Statement,
     },
     Ty,
-    Identifier,
+    ident::Identifier,
     Check,
+    Unload,
 };
 
 use core::pos::BiPos;
@@ -14,13 +15,13 @@ use ir::Chunk;
 use super::Typeck;
 
 use ir::hir::HIRInstruction;
-use ir_traits::ReadInstruction;
+use ir_traits::{ReadInstruction, WriteInstruction};
 use notices::NoticeLevel;
 
 
 #[derive(Debug, Clone)]
 pub struct Fun{
-    pub ident: String,
+    pub ident: Identifier,
     pub ty: Ty,
     pub params: Vec<FunParam>,
     pub body: Vec<Statement>,
@@ -32,6 +33,23 @@ pub struct FunParam{
     pub ident: Identifier,
     pub ty: Ty,
     pub pos: BiPos
+}
+
+impl Unload for FunParam{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        chunk.write_instruction(HIRInstruction::FnParam);
+        chunk.write_pos(self.pos);
+        match self.ident.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        match self.ty.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        Ok(chunk)
+    }
 }
 
 impl<'a> Check<'a> for Fun{
@@ -57,6 +75,17 @@ impl super::Load for Fun{
             }
         };
         let name = chunk.read_string();
+        let name_pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(msg) => {
+                typeck.emit_notice(msg, NoticeLevel::Error, BiPos::default())?;
+                return Err(())
+            } 
+        };
+        let ident = Identifier{
+            ident: name.to_owned(),
+            pos: name_pos,
+        };
         let mut params = vec![];
         while let Some(ins) = chunk.read_instruction() as Option<HIRInstruction>{
             if ins == HIRInstruction::EndParams{
@@ -171,7 +200,7 @@ impl super::Load for Fun{
             block.push(statement);
         }
         let fun = Fun{
-            ident: name.to_owned(),
+            ident,
             ty: Ty{
                 ident: typename,
                 pos: fun_type_pos,
@@ -183,4 +212,30 @@ impl super::Load for Fun{
         Ok(fun)
     }
 
+}
+
+impl Unload for Fun{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        chunk.write_instruction(HIRInstruction::Fn);
+        chunk.write_pos(self.pos);
+        match self.ident.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        for param in self.params.iter(){
+            match param.unload(){
+                Ok(ch) => chunk.write_chunk(ch),
+                Err(()) => return Err(())
+            }
+        }
+        for statement in self.body.iter(){
+            match statement.unload(){
+                Ok(ch) => chunk.write_chunk(ch),
+                Err(()) => return Err(())
+            }
+        }
+        
+        Ok(chunk)
+    }
 }

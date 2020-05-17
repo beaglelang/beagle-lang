@@ -3,7 +3,8 @@ use super::{
     Ty,
     TyValue,
     Typeck,
-    TyValueElement
+    TyValueElement,
+    Unload,
 };
 
 use core::pos::BiPos;
@@ -13,7 +14,10 @@ use ir::{
     hir::HIRInstruction,
 };
 
-use ir_traits::ReadInstruction;
+use ir_traits::{
+    ReadInstruction,
+    WriteInstruction
+};
 
 use notices::NoticeLevel;
 
@@ -39,12 +43,67 @@ pub enum ExprElement{
     Binary(OpKind, Expr, Expr)
 }
 
+impl Unload for ExprElement{
+    fn unload(&self) -> Result<Chunk, ()> {
+        match &self{
+            ExprElement::Grouped(expr) => expr.unload(),
+            ExprElement::Value(ty_val) => ty_val.unload(),
+            ExprElement::UnaryOp(kind, expr) => {
+                let kind_chunk = match kind.unload(){
+                    Ok(chunk) => chunk,
+                    Err(()) => return Err(())
+                };
+                let expr_chunk = match expr.unload(){
+                    Ok(chunk) => chunk,
+                    Err(()) => return Err(())
+                };
+                let mut chunk = Chunk::new();
+                chunk.write_chunk(kind_chunk);
+                chunk.write_chunk(expr_chunk);
+                Ok(chunk)
+            },
+            ExprElement::Binary(kind, left, right) => {
+                let mut chunk = Chunk::new();
+                let kind_chunk = match kind.unload(){
+                    Ok(chunk) => chunk,
+                    Err(()) => return Err(())
+                };
+                chunk.write_chunk(kind_chunk);
+                let left_chunk = match left.unload(){
+                    Ok(chunk) => chunk,
+                    Err(()) => return Err(())
+                };
+                chunk.write_chunk(left_chunk);
+                let right_chunk = match right.unload(){
+                    Ok(chunk) => chunk,
+                    Err(()) => return Err(())
+                };
+                chunk.write_chunk(right_chunk);
+                Ok(chunk)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum OpKind{
     Add,
     Min,
     Mul,
     Div,
+}
+
+impl Unload for OpKind{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        match self{
+            OpKind::Add => chunk.write_instruction(HIRInstruction::Add),
+            OpKind::Min => chunk.write_instruction(HIRInstruction::Sub),
+            OpKind::Div => chunk.write_instruction(HIRInstruction::Div),
+            OpKind::Mul => chunk.write_instruction(HIRInstruction::Mult)
+        }
+        Ok(chunk)
+    }
 }
 
 impl GetTy for ExprElement{
@@ -235,5 +294,21 @@ impl super::Load for Expr{
                 return Err(());
             }
         }
+    }
+}
+
+impl Unload for Expr{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        match self.kind.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        match self.ty.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        chunk.write_pos(self.pos);
+        Ok(chunk)
     }
 }
