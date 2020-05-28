@@ -1,0 +1,102 @@
+/**
+    String struct that wraps `inner`. `Inner` is an array of Char's, and this struct is only used internally, since everything is a type.
+ */
+struct String(using private val inner: [Char]) with Collection<Char>
+
+struct Array<T>(private val elements: [T]) with Collection<T>{
+    impl val head: Option<T> get(){
+        if(this.elements.isEmpty()) return None
+        let _head = this.elements[0]
+        del this.elements[0]
+        return _head
+    }
+    impl val tail: Option<T> get(){
+        if(this.elements.isEmpty()) return None
+        let _tail = this.elements[this.elements.length - 1]
+        del this.elements[0]
+        return _head
+    }
+
+    impl fun forEach(block: ()->Unit){
+        for(elem in this) block()
+    }
+
+    impl fun push(elem: T){
+        this.elements[this.length] = elem
+        this.count++
+    }
+
+    impl fun remove(index: Int){
+        del this.elements[index]
+        this.count--
+    }
+
+    impl fun append(other: [T]){
+        for(elem in other){
+            this.push(elem)
+        }
+    }
+
+    operator fun minus(index: Int){
+        this.remove(other)
+    }
+
+    operator fun plus(elem: T){
+        this.push(elem)
+    }
+
+    operator fun minusAssign(index: Int){
+        this.remove(index)
+    }
+
+    operator fun plusAssign(elem: T){
+        this.push(elem)
+    }
+
+    private var count = 0
+
+    impl val length get() = this.count
+}
+
+let name = "alex"
+let x = match(name.tail){
+    Some(x) -> x,
+    None -> println("Could not get tail cause name is empty")
+}
+let e = match(name.tail){
+    Some(e) -> e,
+    None -> println("Could not get tail cause name is empty")
+}
+let l = match(name.tail){
+    Some(l) -> l,
+    None -> println("Could not get tail cause name is empty")
+}
+let a = match(name.tail){
+    Some(a) -> a,
+    None -> println("Could not get tail cause name is empty")
+}
+match(name.tail){
+    Some(_) -> println("name string should be empty but isn't?")
+    None = println("End of the string. No more tails")
+}
+
+let name = "alex"
+let a = match(name.head){
+    Some(a) -> name += a,
+    None -> println("Could not get head cause name is empty")
+}
+let l = match(name.head){
+    Some(l) -> name += l,
+    None -> println("Could not get head cause name is empty")
+}
+let e = match(name.head){
+    Some(e) -> name += e,
+    None -> println("Could not get head cause name is empty")
+}
+let x = match(name.head){
+    Some(x) -> name += x,
+    None -> println("Could not get head cause name is empty")
+}
+match(name.tail){
+    Some()
+}

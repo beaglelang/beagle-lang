@@ -21,6 +21,7 @@ pub struct Driver{
     lexer_manager: lexer::LexerManager,
     parser_manager: parser::ParseManager,
     typeck_manager: typeck::TypeckManager,
+    memmy_manager: memmy::MemmyManager,
     notice_rx: Receiver<Option<Notice>>
 }
 
@@ -35,6 +36,7 @@ impl Driver {
         let lexer_manager = lexer::LexerManager::new(notice_tx.clone());
         let parser_manager = parser::ParseManager::new(notice_tx.clone());
         let typeck_manager = TypeckManager::new(notice_tx.clone());
+        let memmy_manager = memmy::MemmyManager::new(notice_tx.clone());
         // let mut tir = ir::Module::new(name.clone());
         // let typeck_task = TypeckVM::start_checking(name.clone(), ir_rx, notice_tx.clone(), typeck_tx);
         // let memmy_task = memmy::MemmyGenerator::start(name.clone(), mir_tx, notice_tx, typeck_rx);
@@ -42,6 +44,7 @@ impl Driver {
             lexer_manager,
             parser_manager,
             typeck_manager,
+            memmy_manager,
             notice_rx
         }
     }
@@ -56,7 +59,7 @@ impl Driver {
         let (token_tx, token_rx) = channel();
         let (hir_tx, hir_rx) = channel();
         let (typeck_tx, typeck_rx) = channel::<Option<Chunk>>();
-        let (_mir_tx, _mir_rx) = channel::<Option<Chunk>>();
+        let (mir_tx, _mir_rx) = channel::<Option<Chunk>>();
 
         #[allow(unused_mut)]
         let mut module = ir::Module::new(name.clone().to_string());
@@ -64,6 +67,7 @@ impl Driver {
         self.lexer_manager.enqueue_module(name.clone().to_string(), instr.clone(), token_tx);
         self.parser_manager.enqueue_module(name.clone().to_string(), token_rx, hir_tx);
         self.typeck_manager.enqueue_module(name.clone().to_string(), hir_rx, typeck_tx);
+        self.memmy_manager.enqueue_module(name.clone().to_string(), typeck_rx, mir_tx);
 
         let notice_task = async {
             loop {
@@ -88,14 +92,14 @@ impl Driver {
         //     }
         // };
 
-        let parser_ir_task = async{
-            println!("test");
-            while let Ok(Some(chunk)) = typeck_rx.recv() {
-                println!("{:?}", chunk);
-            }
-        };
+        // let parser_ir_task = async{
+        //     println!("test");
+        //     while let Ok(Some(chunk)) = mir.recv() {
+        //         println!("{:?}", chunk);
+        //     }
+        // };
 
-        futures::join!(parser_ir_task, notice_task);
+        futures::join!(notice_task);
         
         Ok(Box::new(module))
     }

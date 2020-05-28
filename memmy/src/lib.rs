@@ -33,12 +33,71 @@ use notices::{
 
 use core::pos::BiPos;
 
+use futures::executor::ThreadPool;
+
+mod statements;
+mod ident;
+mod property;
+mod fun;
+mod local;
+mod expr;
+mod module;
+
+pub trait Load{
+    type Output;
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()>;
+}
+
+pub trait Check{
+    fn check(&self, memmy: &MemmyGenerator) -> Result<(),()>;
+}
+
+pub trait Unload{
+    fn unload(&self) -> Result<Chunk, ()>;
+}
+
+#[derive(Debug, Clone)]
+struct Mutability{
+    mutable: bool,
+    pos: BiPos,
+}
+
 #[allow(dead_code)]
 struct MemmyElement{
     bc_index: usize,
     count: usize,
     //
     refs: Vec<(String, usize)>
+}
+
+pub struct MemmyManager{
+    ///The threadpool of typeck instances. This is populated by [enqueueModule].
+    thread_pool: ThreadPool,
+    ///A global copy of a notice sender channel that all typeck's are given clones of.
+    notice_tx: Sender<Option<Notice>>,
+}
+
+impl MemmyManager{
+    ///Create a new memmy manager with the given notice sender channel.
+    pub fn new(notice_tx: Sender<Option<Notice>>) -> Self{
+        MemmyManager{
+            thread_pool: ThreadPool::new().unwrap(),
+            notice_tx,
+        }
+    }
+
+    ///Enqueue a module for being type checked in parallel to other stages. See [Driver] for more info.
+    ///This will spawn a new task/thread in thread_pool which executes [Typeck::start_checking].
+    pub fn enqueue_module(&self, module_name: String, typeck_rx: Receiver<Option<Chunk>>, mir_tx: Sender<Option<Chunk>>){
+        let notice_tx_clone = self.notice_tx.clone();
+        let module_name_clone = module_name.clone();
+        self.thread_pool.spawn_ok(async move{
+            let typeck = MemmyGenerator::start(module_name_clone.clone(), mir_tx, notice_tx_clone.clone(), typeck_rx);
+            if let Err(()) = typeck{
+                return
+            };
+        });
+    }
 }
 
 #[allow(dead_code)]
@@ -52,11 +111,11 @@ pub struct MemmyGenerator{
 }
 
 impl MemmyGenerator{
-    fn emit_error(&mut self, msg: String, pos: BiPos) -> Result<(),()>{
+    fn emit_error(&self, msg: String, pos: BiPos) -> Result<(),()>{
         self.emit_notice(msg, NoticeLevel::Error, pos)
     }
 
-    fn emit_notice(&mut self, msg: String, level: NoticeLevel, pos: BiPos) -> Result<(),()>{
+    fn emit_notice(&self, msg: String, level: NoticeLevel, pos: BiPos) -> Result<(),()>{
         if self.notice_tx.send(
             Some(Notice{
                 from: "Memmy".to_string(),
@@ -369,6 +428,7 @@ impl MemmyGenerator{
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn check_and_sort(&mut self) -> Result<(),()>{
         loop{
             let mut chunk = if let Ok(Some(chunk)) = self.typeck_rx.recv(){
@@ -383,8 +443,8 @@ impl MemmyGenerator{
         Ok(())
     }
 
-    pub async fn start(module_name: String, mir_tx: Sender<Option<Chunk>>, notice_tx: Sender<Option<Notice>>, typeck_rx: Receiver<Option<Chunk>>) -> Result<(),()>{
-        let mut memmy = Self{
+    pub fn start(module_name: String, mir_tx: Sender<Option<Chunk>>, notice_tx: Sender<Option<Notice>>, typeck_rx: Receiver<Option<Chunk>>) -> Result<(),()>{
+        let memmy = Self{
             module_name,
             symbol_table: Vec::new(),
             mir_tx,
@@ -392,8 +452,21 @@ impl MemmyGenerator{
             typeck_rx,
             final_chunk: Chunk::new(),
         };
-        if memmy.check_and_sort().is_err(){
-            return Err(())
+        let mut statements = vec![];
+        loop{
+            let chunk = if let Ok(Some(chunk)) = memmy.typeck_rx.recv(){
+                chunk
+            }else{
+                break
+            };
+            let statement = match statements::Statement::load(&chunk, &memmy){
+                Ok(statement) => statement,
+                Err(()) => return Err(())
+            };
+            statements.push(statement);
+        }
+        for statement in statements.iter(){
+            println!("{:?}", statement);
         }
         Ok(())
     }

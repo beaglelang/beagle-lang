@@ -172,11 +172,6 @@ pub struct TyValue{
 impl Unload for TyValue{
     fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
-        let ty_chunk = match self.ty.unload(){
-            Ok(chunk) => chunk,
-            Err(_) => return Err(())
-        };
-        chunk.write_chunk(ty_chunk);
         let tyval_chunk = match self.elem.unload(){
             Ok(chunk) => chunk,
             Err(_) => return Err(())
@@ -224,8 +219,17 @@ pub struct Ty{
 impl Unload for Ty{
     fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
+        if self.pos != BiPos::default(){
+            chunk.write_pos(self.pos);
+        }
+        match self.ident.clone().as_str(){
+            "Int" => chunk.write_instruction(HIRInstruction::Integer),
+            "Float" => chunk.write_instruction(HIRInstruction::Float),
+            "Bool" => chunk.write_instruction(HIRInstruction::Bool),
+            "String" => chunk.write_instruction(HIRInstruction::String),
+            _ => chunk.write_instruction(HIRInstruction::Custom),
+        }
         chunk.write_string(self.ident.clone());
-        chunk.write_pos(self.pos);
         Ok(chunk)
     }
 }
@@ -310,10 +314,6 @@ impl<'a> Typeck{
     }
 
     fn unload(&self) -> Result<(),()>{
-        let mut module_chunk = Chunk::new();
-        module_chunk.write_instruction(HIRInstruction::Module);
-        module_chunk.write_string(self.module_ir.ident.clone());
-        self.typeck_tx.send(Some(module_chunk)).unwrap();
         for statement in self.module_ir.statements.iter(){
             let ch = match statement.unload(){
                 Ok(chunk) => chunk,
@@ -321,9 +321,6 @@ impl<'a> Typeck{
             };
             self.typeck_tx.send(Some(ch)).unwrap();
         }
-        let mut module_chunk = Chunk::new();
-        module_chunk.write_instruction(HIRInstruction::EndModule);
-        module_chunk.write_string(self.module_ir.ident.clone());
         Ok(())
     }
 

@@ -149,6 +149,11 @@ impl Chunk{
         let old = self.ins_ptr.clone().into_inner();
         self.ins_ptr.replace(old + amount);
     }
+    
+    pub fn dec_ins_ptr(&self, amount: usize){
+        let old = self.ins_ptr.clone().into_inner();
+        self.ins_ptr.replace(old - amount);
+    }
 
     pub fn read_usize_at(&self, idx: usize) -> Result<usize, String>{
         if self.code.len() < idx || self.code.len() < idx+8{

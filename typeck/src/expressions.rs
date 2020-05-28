@@ -5,6 +5,7 @@ use super::{
     Typeck,
     TyValueElement,
     Unload,
+    // Check,
 };
 
 use core::pos::BiPos;
@@ -41,6 +42,19 @@ pub enum ExprElement{
     Value(TyValue),
     UnaryOp(OpKind, Expr),
     Binary(OpKind, Expr, Expr)
+}
+
+impl Unload for Expr{
+    fn unload(&self) -> Result<Chunk, ()> {
+        let mut chunk = Chunk::new();
+        chunk.write_pos(self.pos);
+        match self.kind.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        
+        Ok(chunk)
+    }
 }
 
 impl Unload for ExprElement{
@@ -297,18 +311,3 @@ impl super::Load for Expr{
     }
 }
 
-impl Unload for Expr{
-    fn unload(&self) -> Result<Chunk, ()> {
-        let mut chunk = Chunk::new();
-        match self.kind.unload(){
-            Ok(ch) => chunk.write_chunk(ch),
-            Err(()) => return Err(())
-        }
-        match self.ty.unload(){
-            Ok(ch) => chunk.write_chunk(ch),
-            Err(()) => return Err(())
-        }
-        chunk.write_pos(self.pos);
-        Ok(chunk)
-    }
-}

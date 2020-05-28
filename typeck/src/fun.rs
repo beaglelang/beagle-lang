@@ -219,22 +219,33 @@ impl Unload for Fun{
         let mut chunk = Chunk::new();
         chunk.write_instruction(HIRInstruction::Fn);
         chunk.write_pos(self.pos);
+        //Write the identifier
         match self.ident.unload(){
             Ok(ch) => chunk.write_chunk(ch),
             Err(()) => return Err(())
         }
+
+        //Write the params information
         for param in self.params.iter(){
             match param.unload(){
                 Ok(ch) => chunk.write_chunk(ch),
                 Err(()) => return Err(())
             }
         }
+        //Write the return type information
+        match self.ty.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        //Write the body
         for statement in self.body.iter(){
             match statement.unload(){
                 Ok(ch) => chunk.write_chunk(ch),
                 Err(()) => return Err(())
             }
         }
+
+        chunk.write_instruction(HIRInstruction::EndFn);
         
         Ok(chunk)
     }

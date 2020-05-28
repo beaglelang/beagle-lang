@@ -164,18 +164,28 @@ impl Unload for Local{
         let mut chunk = Chunk::new();
 
         chunk.write_instruction(HIRInstruction::LocalVar);
+        chunk.write_pos(self.pos);
         let ident_chunk = match self.ident.unload(){
             Ok(chunk) => chunk,
             Err(_) => return Err(())
         };
         chunk.write_chunk(ident_chunk);
+        let mut_chunk = match self.mutable.unload(){
+            Ok(chunk) => chunk,
+            Err(_) => return Err(())
+        };
+        chunk.write_chunk(mut_chunk);
         let ty = self.ty.clone().into_inner();
         let ty_chunk = match ty.unload(){
             Ok(chunk) => chunk,
             Err(_) => return Err(())
         };
         chunk.write_chunk(ty_chunk);
-        
+        let expr_chunk = match self.expr.unload(){
+            Ok(chunk) => chunk,
+            Err(()) => return Err(())
+        };
+        chunk.write_chunk(expr_chunk);
         Ok(chunk)
     }
 }

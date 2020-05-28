@@ -13,3 +13,4 @@ notices = { path = "../notices", version = "*" }
 num-traits = "0.2"
 num-derive = "0.2"
 ir_traits = { path = "../ir_traits", version = "*" }
+futures = { version = "*", features = ["thread-pool"] }

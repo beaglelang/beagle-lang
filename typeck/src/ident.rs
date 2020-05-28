@@ -17,8 +17,8 @@ pub struct Identifier{
 impl Unload for Identifier{
     fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
-        chunk.write_string(self.ident.clone());
         chunk.write_pos(self.pos);
+        chunk.write_string(self.ident.clone());
         Ok(chunk)
     }
 }

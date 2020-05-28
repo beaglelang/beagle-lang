@@ -158,15 +158,15 @@ impl Unload for Property{
         let mut chunk = Chunk::new();
         chunk.write_instruction(HIRInstruction::Property);
         chunk.write_pos(self.pos);
-        match self.ty.clone().into_inner().unload(){
-            Ok(ch) => chunk.write_chunk(ch),
-            Err(()) => return Err(())
-        }
         match self.ident.unload(){
             Ok(ch) => chunk.write_chunk(ch),
             Err(()) => return Err(())
         }
         match self.mutable.unload(){
+            Ok(ch) => chunk.write_chunk(ch),
+            Err(()) => return Err(())
+        }
+        match self.ty.clone().into_inner().unload(){
             Ok(ch) => chunk.write_chunk(ch),
             Err(()) => return Err(())
         }
