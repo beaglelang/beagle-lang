@@ -194,8 +194,6 @@ impl<'a> Typeck{
             ))
         }
 
-        println!("{:#?}", typeck.module_ir);
-
         if let Err(notice) = typeck.unload(){
             return Err(Notice::new(
                 format!("Typeck"),
