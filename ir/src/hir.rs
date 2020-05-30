@@ -98,6 +98,7 @@ impl std::fmt::Display for Chunk{
                             return Err(std::fmt::Error{})
                         }
                     };
+                    let _name_pos = self.read_pos();
                     let name = self.read_string();
                     write!(f, "{}{}{}{}(", padding(), Colour::Blue.paint("Fn"), padding(), Colour::White.paint(name))?;
                     loop{
@@ -111,7 +112,9 @@ impl std::fmt::Display for Chunk{
                                         return Err(std::fmt::Error{})
                                     }
                                 };
+                                let _name_pos = self.read_pos();
                                 let name = self.read_string();
+                                let _typename_pos = self.read_pos();
                                 let typename = self.read_string();
                                 writeln!(f, "{}: {}", Colour::Yellow.paint(format!("FnParam {}", name)), Colour::White.paint(typename))?;
                             }
@@ -122,7 +125,6 @@ impl std::fmt::Display for Chunk{
                         }
                     }
                     write!(f, ")")?;
-                    let typename = self.read_string();
                     let _typename_pos = match self.read_pos(){
                         Ok(pos) => pos,
                         Err(msg) => {
@@ -130,6 +132,7 @@ impl std::fmt::Display for Chunk{
                             return Err(std::fmt::Error{})
                         }
                     };
+                    let typename = self.read_string();
                     writeln!(f, "{}", Colour::White.paint(typename))?;
                 }
                 Some(HIRInstruction::Block) => {

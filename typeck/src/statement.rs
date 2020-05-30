@@ -6,8 +6,6 @@ use stmt::{
     StatementKind
 };
 
-use core::pos::BiPos;
-
 use ir::{
     Chunk,
     hir::HIRInstruction,
@@ -19,12 +17,15 @@ use super::{
     Unload,
 };
 use ir_traits::ReadInstruction;
-use notices::NoticeLevel;
+use notices::{ 
+    NoticeLevel,
+    Notice,
+};
 
 impl Load for Statement{
     type Output = Statement;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice> {
         match chunk.read_instruction(){
             Some(HIRInstruction::Property) => match Property::load(chunk, typeck){
                 Ok(property) => {
@@ -33,7 +34,7 @@ impl Load for Statement{
                         pos: property.pos.clone()
                     })
                 },
-                Err(()) => Err(())
+                Err(msg) => return Err(msg)
             },
             Some(HIRInstruction::Fn) => match Fun::load(chunk, typeck){
                 Ok(fun) => {
@@ -42,7 +43,7 @@ impl Load for Statement{
                         pos: fun.pos.clone()
                     })
                 },
-                Err(()) => Err(())
+                Err(msg) => return Err(msg)
             },
             Some(HIRInstruction::LocalVar) => match Local::load(chunk, typeck){
                 Ok(local) => {
@@ -51,23 +52,30 @@ impl Load for Statement{
                         pos: local.pos.clone()
                     })
                 },
-                Err(()) => Err(())
+                Err(msg) => return Err(msg)
             }
             _ => {
                 chunk.jump_to(0).unwrap();
-                if chunk.code.is_empty(){
-                    typeck.emit_notice(format!("Malformed bytecode chunk: chunk is empty, which is a bug in the compiler."), NoticeLevel::ErrorPrint, BiPos::default())?;
+                let message = if chunk.code.is_empty(){
+                    format!("Malformed bytecode chunk: chunk is empty, which is a bug in the compiler.")
                 }else{
-                    typeck.emit_notice(format!("Malformed bytecode chunk: could not read instruction from chunk; no further information provided. This should only happening during development and should never be seen by the user. If this is the case contact the author with this information: \n\tTypeck#load_statement failed to read instruction from chunk.\n\tFurther information: {}", chunk), NoticeLevel::ErrorPrint, BiPos::default())?;
-                }
-                Err(())
+                    format!("Malformed bytecode chunk: could not read instruction from chunk; no further information provided. This should only happening during development and should never be seen by the user. If this is the case contact the author with this information: \n\tTypeck#load_statement failed to read instruction from chunk.\n\tFurther information: {}", chunk)
+                };
+                return Err(Notice::new(
+                    format!("Statement Loader"),
+                    message,
+                    None,
+                    None,
+                    NoticeLevel::Error,
+                    vec![]
+                ))
             }
         }
     }
 }
 
 impl<'a> super::Check<'a> for Statement{
-    fn check(&self, typeck: &'a Typeck) -> Result<(), ()> {
+    fn check(&self, typeck: &'a Typeck) -> Result<(), Notice> {
         match &self.kind{
             StatementKind::Local(local) => local.check(typeck),
             StatementKind::Fun(fun) => fun.check(typeck),
@@ -77,20 +85,20 @@ impl<'a> super::Check<'a> for Statement{
 }
 
 impl Unload for Statement{
-    fn unload(&self) -> Result<Chunk, ()> {
+    fn unload(&self) -> Result<Chunk, Notice> {
         let mut chunk = Chunk::new();
         match &self.kind{
             StatementKind::Fun(fun) => match fun.unload(){
                 Ok(ch) => chunk.write_chunk(ch),
-                Err(()) => return Err(())
+                Err(msg) => return Err(msg)
             },
             StatementKind::Local(local) => match local.unload(){
                 Ok(ch) => chunk.write_chunk(ch),
-                Err(()) => return Err(())
+                Err(msg) => return Err(msg)
             },
             StatementKind::Property(prop) => match prop.unload(){
                 Ok(ch) => chunk.write_chunk(ch),
-                Err(()) => return Err(())
+                Err(msg) => return Err(msg)
             },
         }
         chunk.write_pos(self.pos);

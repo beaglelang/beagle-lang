@@ -76,6 +76,10 @@ impl Notice {
 
         
         if self.source.is_none(){
+            for cause in self.children{
+                cause.report(source);
+            }
+            println!();
             return;
         }
 
@@ -103,7 +107,10 @@ impl Notice {
                 println!();
             }
         }
-
+        for cause in self.children{
+            cause.report(source);
+        }
+        println!();
     }
 }
 
@@ -137,7 +144,7 @@ impl SourceOrigin for BiPos {
             self.end.1 - self.start.1
         };
 
-        let squiggly = if (self.start.1 as usize - 1) < error_line.len() {
+        let squiggly = if (self.start.1 as usize) < error_line.len() {
             core::padding::padding("^", squiggly_amount).to_string()
         } else {
             String::new()

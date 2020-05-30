@@ -28,7 +28,7 @@ impl ParseRule for StatementParser{
             _ => {
                 return Err(Notice::new(
                     format!("Statement Parser"),
-                    format!("Unexpected token found: {}", token),
+                    format!("Unexpected token found: {:?}", token.type_),
                     Some(parser.name.clone()),
                     Some(parser.current_token().pos),
                     NoticeLevel::Error,

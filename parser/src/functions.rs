@@ -26,7 +26,7 @@ impl ParseRule for FunctionParser{
     fn parse(parser: &mut Parser) -> Result<(),Notice>{
         let mut chunk = Chunk::new();
         let lpos = parser.current_token().pos;
-        if !parser.check_consume(TokenType::KwFun) {
+        if let Err(_) = parser.check_consume(TokenType::KwFun) {
             let message = format!(
                 "Expected a fun keyword token, but instead got {}",
                 parser.current_token()
@@ -79,8 +79,8 @@ impl ParseRule for FunctionParser{
                 ));
             }
         };
-        chunk.write_string(name);
         chunk.write_pos(parser.current_token().pos);
+        chunk.write_string(name);
         if parser.advance().is_err(){
             return Err(Notice::new(
                 format!("Function Parser"), 
@@ -149,7 +149,7 @@ impl ParseRule for FunctionParser{
         body_chunk.write_instruction(HIRInstruction::Block);
         body_chunk.write_pos(parser.current_token().pos);
         parser.emit_ir_whole(body_chunk);
-        while !parser.check_consume(TokenType::RCurly){
+        while let Ok(false) = parser.check_consume(TokenType::RCurly){
             parser.advance().unwrap();
             if let Err(notice) = LocalStatementParser::parse(parser){
                 return Err(notice)

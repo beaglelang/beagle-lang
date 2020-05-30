@@ -19,14 +19,17 @@ use ty::{
     TyValue
 };
 
-use notices::NoticeLevel;
+use notices::{
+    NoticeLevel,
+    Notice,
+};
 
 pub trait Inference{
     fn infer_type(&self, typeck: &Typeck) -> Result<(),()>;
 }
 
 impl Unload for Ty{
-    fn unload(&self) -> Result<Chunk, ()> {
+    fn unload(&self) -> Result<Chunk, Notice> {
         let mut chunk = Chunk::new();
         if self.pos != BiPos::default(){
             chunk.write_pos(self.pos);
@@ -46,12 +49,18 @@ impl Unload for Ty{
 impl Load for Ty{
     type Output = Ty;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
-                return Err(())
+                return Err(Notice::new(
+                    format!("Type Loader"),
+                    msg,
+                    None,
+                    None,
+                    NoticeLevel::Error,
+                    vec![]
+                ))
             }
         };
         let ins = chunk.read_instruction() as Option<HIRInstruction>;
@@ -64,8 +73,14 @@ impl Load for Ty{
                 }
             }
             None => {
-                typeck.emit_notice(format!("Expected a param type annotation but instead got none. This is a bug in the compiler."), NoticeLevel::Error, pos)?;
-                return Err(())
+                return Err(Notice::new(
+                    format!("Type Loader"),
+                    format!("Expected a param type annotation but instead got none. This is a bug in the compiler."),
+                    Some(typeck.module_name.clone()),
+                    Some(pos),
+                    NoticeLevel::Error,
+                    vec![]
+                ))
             }
         };
         Ok(Ty{
@@ -81,7 +96,7 @@ pub trait GetTy{
 }
 
 impl Unload for TyValueElement{
-    fn unload(&self) -> Result<Chunk, ()> {
+    fn unload(&self) -> Result<Chunk, Notice> {
         let mut chunk = Chunk::new();
         match self{
             TyValueElement::Bool(b) => {
@@ -115,11 +130,11 @@ impl Unload for TyValueElement{
 
 
 impl Unload for TyValue{
-    fn unload(&self) -> Result<Chunk, ()> {
+    fn unload(&self) -> Result<Chunk, Notice> {
         let mut chunk = Chunk::new();
         let tyval_chunk = match self.elem.unload(){
             Ok(chunk) => chunk,
-            Err(_) => return Err(())
+            Err(notice) => return Err(notice)
         };
         chunk.write_chunk(tyval_chunk);
         Ok(chunk)

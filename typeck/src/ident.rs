@@ -7,11 +7,13 @@ use super::{
 use ir::Chunk;
 
 use ident::Identifier;
-use notices::NoticeLevel;
-use core::pos::BiPos;
+use notices::{
+    NoticeLevel,
+    Notice,
+};
 
 impl Unload for Identifier{
-    fn unload(&self) -> Result<Chunk, ()> {
+    fn unload(&self) -> Result<Chunk, Notice> {
         let mut chunk = Chunk::new();
         chunk.write_pos(self.pos);
         chunk.write_string(self.ident.clone());
@@ -21,12 +23,18 @@ impl Unload for Identifier{
 
 impl Load for Identifier{
     type Output = Identifier;
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
+    fn load(chunk: &Chunk, _typeck: &Typeck) -> Result<Self::Output, Notice> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                typeck.emit_notice(msg, NoticeLevel::Error, BiPos::default())?;
-                return Err(())
+                return Err(Notice::new(
+                    format!("Identifier Loader"),
+                    msg,
+                    None,
+                    None,
+                    NoticeLevel::Error,
+                    vec![]
+                ))
             }
         };
         let ident = chunk.read_string();

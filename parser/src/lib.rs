@@ -200,12 +200,14 @@ impl Parser {
     }
 
     #[inline]
-    pub fn check_consume(&mut self, type_: TokenType) -> bool {
+    pub fn check_consume(&mut self, type_: TokenType) -> Result<bool, Notice> {
         if self.check(type_) {
-            self.advance().unwrap();
-            true
+            if let Err(notice) = self.advance(){
+                return Err(notice)
+            };
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 

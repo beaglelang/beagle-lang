@@ -51,6 +51,7 @@ impl ParseRule for PropertyParser{
             false
         };
         chunk.write_bool(mutable);
+        chunk.write_pos(lpos);
         parser.advance().unwrap();
         if !parser.check(TokenType::Identifier) {
             let message = format!(
@@ -85,6 +86,7 @@ impl ParseRule for PropertyParser{
             }
         };
 
+        chunk.write_pos(parser.current_token().pos);
         chunk.write_string(name.clone());
         if parser.check_consume_next(TokenType::Colon) {
             if let Ok(t) = TypeParser::get_type(parser){
@@ -109,7 +111,7 @@ impl ParseRule for PropertyParser{
             chunk.write_instruction(HIRInstruction::Unknown);
         };
 
-        if !parser.check_consume(TokenType::Equal) {
+        if let Err(_) = parser.check_consume(TokenType::Equal) {
             let found_token = parser.current_token();
             let data = match &found_token.data {
                 TokenData::Float(f) => f.to_string(),

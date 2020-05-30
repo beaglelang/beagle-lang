@@ -7,8 +7,6 @@ use super::{
 
 use ty::{ Ty, TyValue, TyValueElement };
 
-use core::pos::BiPos;
-
 use expr::{ Expr, ExprElement, OpKind };
 
 use ir::{
@@ -21,7 +19,10 @@ use ir_traits::{
     WriteInstruction
 };
 
-use notices::NoticeLevel;
+use notices::{
+    NoticeLevel,
+    Notice,
+};
 
 
 impl GetTy for Expr{
@@ -33,12 +34,12 @@ impl GetTy for Expr{
 
 
 impl Unload for Expr{
-    fn unload(&self) -> Result<Chunk, ()> {
+    fn unload(&self) -> Result<Chunk, Notice> {
         let mut chunk = Chunk::new();
         chunk.write_pos(self.pos);
         match self.kind.unload(){
             Ok(ch) => chunk.write_chunk(ch),
-            Err(()) => return Err(())
+            Err(notice) => return Err(notice)
         }
         
         Ok(chunk)
@@ -46,18 +47,18 @@ impl Unload for Expr{
 }
 
 impl Unload for ExprElement{
-    fn unload(&self) -> Result<Chunk, ()> {
+    fn unload(&self) -> Result<Chunk, Notice> {
         match &self{
             ExprElement::Grouped(expr) => expr.unload(),
             ExprElement::Value(ty_val) => ty_val.unload(),
             ExprElement::UnaryOp(kind, expr) => {
                 let kind_chunk = match kind.unload(){
                     Ok(chunk) => chunk,
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 let expr_chunk = match expr.unload(){
                     Ok(chunk) => chunk,
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 let mut chunk = Chunk::new();
                 chunk.write_chunk(kind_chunk);
@@ -68,17 +69,17 @@ impl Unload for ExprElement{
                 let mut chunk = Chunk::new();
                 let kind_chunk = match kind.unload(){
                     Ok(chunk) => chunk,
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 chunk.write_chunk(kind_chunk);
                 let left_chunk = match left.unload(){
                     Ok(chunk) => chunk,
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 chunk.write_chunk(left_chunk);
                 let right_chunk = match right.unload(){
                     Ok(chunk) => chunk,
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 chunk.write_chunk(right_chunk);
                 Ok(chunk)
@@ -90,7 +91,7 @@ impl Unload for ExprElement{
 
 
 impl Unload for OpKind{
-    fn unload(&self) -> Result<Chunk, ()> {
+    fn unload(&self) -> Result<Chunk, Notice> {
         let mut chunk = Chunk::new();
         match self{
             OpKind::Add => chunk.write_instruction(HIRInstruction::Add),
@@ -118,13 +119,19 @@ impl GetTy for ExprElement{
 impl Load for Expr{
     type Output = Expr;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice> {
         let ins: Option<HIRInstruction> = chunk.read_instruction();
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
-                return Err(())
+                return Err(Notice::new(
+                    format!("Expression Checker"),
+                    msg,
+                    None,
+                    None,
+                    NoticeLevel::Error,
+                    vec![]
+                ))
             }
         };
         match &ins {
@@ -197,13 +204,13 @@ impl Load for Expr{
                     Ok(expr) => {
                         expr
                     }
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 let right = match Expr::load(&chunk, typeck){
                     Ok(expr) => {
                         expr
                     }
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 return Ok(Expr{
                     kind: Box::new(ExprElement::Binary(
@@ -220,13 +227,13 @@ impl Load for Expr{
                     Ok(expr) => {
                         expr
                     }
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 let right = match Expr::load(&chunk, typeck){
                     Ok(expr) => {
                         expr
                     }
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 return Ok(Expr{
                     kind: Box::new(ExprElement::Binary(
@@ -243,13 +250,13 @@ impl Load for Expr{
                     Ok(expr) => {
                         expr
                     }
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 let right = match Expr::load(&chunk, typeck){
                     Ok(expr) => {
                         expr
                     }
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 return Ok(Expr{
                     kind: Box::new(ExprElement::Binary(
@@ -266,13 +273,13 @@ impl Load for Expr{
                     Ok(expr) => {
                         expr
                     }
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 let right = match Expr::load(&chunk, typeck){
                     Ok(expr) => {
                         expr
                     }
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice)
                 };
                 return Ok(Expr{
                     kind: Box::new(ExprElement::Binary(
@@ -286,8 +293,14 @@ impl Load for Expr{
             }
             
             _ => {
-                typeck.emit_notice(format!("Expected an expression but instead got instruction {:?}", ins.unwrap()), NoticeLevel::Error, pos).unwrap();
-                return Err(());
+                return Err(Notice::new(
+                    format!("Expression Checker"),
+                    format!("Expected an expression but instead got instruction {:?}", ins.unwrap()),
+                    Some(typeck.module_name.clone()),
+                    Some(pos),
+                    NoticeLevel::Error,
+                    vec![]
+                ))
             }
         }
     }

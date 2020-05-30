@@ -8,7 +8,7 @@ use core::pos::BiPos;
 ///     a.doSomething()
 /// }
 ///```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Ty{
     ///The name of the type. This is used for comparison.
     pub ident: String,
@@ -49,4 +49,10 @@ pub enum TyValueElement{
     Bool(bool),
     Custom(String),
     Unit
+}
+
+impl PartialEq<Ty> for Ty{
+    fn eq(&self, other: &Ty) -> bool {
+        self.ident == other.ident
+    }
 }

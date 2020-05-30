@@ -23,5 +23,9 @@ pub fn padding<S: AsRef<str>>(string: S, count: usize) -> Padding {
 }
 
 pub fn padding_until<S: AsRef<str>>(string: S, limit: usize) -> Padding{
-    padding(string, limit - 1)
+    if limit == 0{
+        padding(string, limit)
+    }else{
+        padding(string, limit - 1)
+    }
 }

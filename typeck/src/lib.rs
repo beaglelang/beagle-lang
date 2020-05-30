@@ -11,7 +11,6 @@ use std::sync::{
 
 use futures::executor::ThreadPool;
 
-use core::pos::BiPos as Position;
 
 mod expressions;
 
@@ -32,11 +31,11 @@ pub trait Load{
     ///The type being loaded/returned upon success by [load].
     type Output;
     ///Convert the given [chunk] to an IR for the given [typeck].
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()>;
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice>;
 }
 
 pub trait Unload{
-    fn unload(&self) -> Result<Chunk, ()>;
+    fn unload(&self) -> Result<Chunk, Notice>;
 }
 
 ///A global manager for all [typeck]s. All typeck's are added to a threadpool upon a call to [enqueueModule].
@@ -92,15 +91,8 @@ impl TypeckManager{
         let notice_tx_clone = self.notice_tx.clone();
         let module_name_clone = module_name.clone();
         self.thread_pool.spawn_ok(async move{
-            let typeck = Typeck::start_checking(module_name_clone.clone(), hir_rx, notice_tx_clone.clone(), typeck_tx);
-            if let Err(msg) = typeck{
-                let notice = Notice{
-                    from: "Typeck".to_string(),
-                    file: module_name_clone,
-                    level: NoticeLevel::ErrorPrint,
-                    msg,
-                    pos: Position::default()
-                };
+            let typeck = Typeck::start_checking(module_name_clone.clone(), hir_rx, typeck_tx);
+            if let Err(notice) = typeck{
                 notice_tx_clone.clone().send(Some(notice)).unwrap();
             };
         });
@@ -114,7 +106,7 @@ trait Check<'a>{
     ///Check the current IR and return `Err(())` if an error notice has been emitted to the typeck.
     ///This function will only ever be called after `load` phase has successfully completed.
     ///param: typeck The typeck instance involved in the checking phase.
-    fn check(&self, typeck: &'a Typeck) -> Result<(), ()>;
+    fn check(&self, typeck: &'a Typeck) -> Result<(), Notice>;
 }
 
 ///A single instance of a type checker, thus the shortened name *Typeck*. Each file is given its own Typeck. 
@@ -132,8 +124,6 @@ pub struct Typeck{
     module_name: String,
     ///The inbound HIR chunk receive channel. `None` if there are no more chunks coming.
     chunk_rx: Receiver<Option<Chunk>>,
-    ///A clone of the notice_tx provided by [TypeckManager].
-    notice_tx: Sender<Option<Notice>>,
     ///The outbound TIR chunks send channel. TIR is 
     typeck_tx: Sender<Option<Chunk>>,
     ///The main module IR instance which represents the entire file as a module. This is where child elements are added.
@@ -141,25 +131,10 @@ pub struct Typeck{
 }
 
 impl<'a> Typeck{
-    ///This method is used for emitting notices. See [Notice] for more information.
-    fn emit_notice(&self, msg: String, level: NoticeLevel, pos: Position) -> Result<(),()>{
-        if self.notice_tx.send(
-            Some(notices::Notice{
-                from: "Typeck".to_string(),
-                msg,
-                file: self.module_name.clone(),
-                level,
-                pos
-            })
-        ).is_err(){
-            return Err(())
-        }
-        Ok(())
-    }
-
+    
     ///This is the start of the load phase. This begins to take in HIR chunks and calls `Statement::load` with that chunk and the current typeck.
     //The produced Statement object is added to [module_ir].
-    fn load(&mut self) -> Result<(),()>{
+    fn load(&mut self) -> Result<(),Notice>{
         loop{
             let chunk = if let Ok(Some(chunk)) = self.chunk_rx.recv(){
                 chunk
@@ -168,17 +143,17 @@ impl<'a> Typeck{
             };
             let statement = match Statement::load(&chunk, self){
                 Ok(statement) => statement,
-                Err(()) => return Err(())
+                Err(notice) => return Err(notice)
             };
             self.module_ir.statements.push(statement);
         }
     }
 
-    fn unload(&self) -> Result<(),()>{
+    fn unload(&self) -> Result<(),Notice>{
         for statement in self.module_ir.statements.iter(){
             let ch = match statement.unload(){
                 Ok(chunk) => chunk,
-                Err(()) => return Err(())
+                Err(notice) => return Err(notice)
             };
             self.typeck_tx.send(Some(ch)).unwrap();
         }
@@ -186,10 +161,9 @@ impl<'a> Typeck{
     }
 
     ///This is the start of the entire typeck operation, which creates a new typeck object and procceeds to call it's load phase followed by its check phase.
-    pub fn start_checking(module_name: String, ir_rx: Receiver<Option<Chunk>>, notice_tx: Sender<Option<Notice>>, typeck_tx: Sender<Option<Chunk>>) -> Result<(), String>{
+    pub fn start_checking(module_name: String, ir_rx: Receiver<Option<Chunk>>, typeck_tx: Sender<Option<Chunk>>) -> Result<(), Notice>{
         let mut typeck = Self{
             module_name: module_name.clone(),
-            notice_tx: notice_tx.clone(),
             typeck_tx,
             chunk_rx: ir_rx,
             module_ir: modules::Module{
@@ -198,16 +172,37 @@ impl<'a> Typeck{
             },
         };
 
-        if typeck.load().is_err(){
-            return Err("An error occurred while loading bytecode into type analyzer".to_owned())
+        if let Err(notice) = typeck.load(){
+            return Err(Notice::new(
+                format!("Typeck"),
+                "An error occurred during type checking".to_owned(),
+                None,
+                None,
+                NoticeLevel::Error,
+                vec![notice]
+            ))
         }
         
-        if typeck.module_ir.check(&typeck).is_err(){
-            return Err("An error occurred during type checking".to_owned())
+        if let Err(notice) = typeck.module_ir.check(&typeck){
+            return Err(Notice::new(
+                format!("Typeck"),
+                "An error occurred during type checking".to_owned(),
+                None,
+                None,
+                NoticeLevel::Error,
+                vec![notice]
+            ))
         }
 
-        if typeck.unload().is_err(){
-            return Err("An error occurred while unloading typeck.".to_owned())
+        if let Err(notice) = typeck.unload(){
+            return Err(Notice::new(
+                format!("Typeck"),
+                "An error occurred during type checking".to_owned(),
+                None,
+                None,
+                NoticeLevel::Error,
+                vec![notice]
+            ))
         }
 
         typeck.typeck_tx.send(None).unwrap();

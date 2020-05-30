@@ -41,7 +41,7 @@ impl ParseRule for LocalVarParser{
                 vec![]
             ))
         }
-        if !parser.check_consume(TokenType::KwLet) {
+        if let Err(_) = parser.check_consume(TokenType::KwLet) {
             return Err(Notice::new(
                 format!("Local Parser"),
                 format!("Expected keyword 'let' for defining an local variable."),
@@ -88,8 +88,8 @@ impl ParseRule for LocalVarParser{
                 ));
             }
         };
-        chunk.write_string(name.clone());
         chunk.write_pos(parser.current_token().pos);
+        chunk.write_string(name.clone());
         if parser.next_token().type_ == TokenType::Colon {
             if let Ok(t) = TypeParser::get_type(parser){
                 chunk.write_chunk(t)
@@ -112,7 +112,7 @@ impl ParseRule for LocalVarParser{
         }
         parser.emit_ir_whole(chunk);
 
-        if !parser.check_consume(TokenType::Equal) {
+        if let Err(_) = parser.check_consume(TokenType::Equal) {
             let found_token = parser.current_token();
             let data = match &found_token.data {
                 TokenData::Float(f) => f.to_string(),

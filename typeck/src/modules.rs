@@ -4,6 +4,10 @@ use super::{
 
 use stmt::Statement;
 
+use notices::{
+    Notice,
+};
+
 #[derive(Debug, Clone)]
 pub struct Module{
     pub ident: String,
@@ -11,10 +15,10 @@ pub struct Module{
 }
 
 impl<'a> super::Check<'a> for Module{
-    fn check(&self, typeck: &'a Typeck) -> Result<(), ()> {
+    fn check(&self, typeck: &'a Typeck) -> Result<(), Notice> {
         for statement in self.statements.iter(){
-            if statement.check(typeck).is_err(){
-                return Err(())
+            if let Err(notice) = statement.check(typeck){
+                return Err(notice)
             }
         }
         Ok(())
