@@ -2,12 +2,17 @@ use super::{
     Typeck,
     Load,
     Unload,
+    ty::{
+        Inference,
+        GetTy,
+    }
 };
 
-use ty::Ty;
+use ty::{
+    Ty,
+};
 use expr::{
     Expr,
-    ExprElement    
 };
 use ident::Identifier;
 use mutable::Mutability;
@@ -34,63 +39,41 @@ use stmt::{
     local::Local,
 };
 
-impl<'a> super::Check<'a> for Local{
-    fn check(&self, typeck: &Typeck) -> Result<(), Notice> {
-        let ty = self.ty.clone();
-        let expr = &self.expr;
-        match expr.kind.as_ref(){
-            ExprElement::Value(value) => {
-                let ty_inner = ty.clone().into_inner();
-                if ty_inner.ident == "Unknown"{
-                    self.ty.replace(Ty{
-                        ident: value.ty.ident.clone(),
-                        pos: ty_inner.pos,
-                    });
-                    return Ok(());
-                }
-                if ty.clone().into_inner() != value.ty{
-                    return Err(Notice::new(
-                        format!("Local Checker"),
-                        format!(
-                            "Expected an assignment of type {:?} but instead got {:?}", 
-                            ty,
-                            value.ty
-                        ),
-                        Some(typeck.module_name.clone()),
-                        Some(BiPos{
-                            start: self.pos.start,
-                            end: expr.pos.end
-                        }),
-                        NoticeLevel::Error,
-                        vec![]
-                    ))
-                }
-            }
-            ExprElement::Binary(_, left, right) => {
-                if left.ty.ident != right.ty.ident{
-                    let error_pos = BiPos{
-                        start: left.pos.start,
-                        end: right.pos.end
-                    };
-                    return Err(Notice::new(
-                        format!("Local Checker"),
-                        format!("Left hand expression of binary operation is of type {} while right hand is of type {}. This is incorrect.\n\tEither change the left to match the right or change the right to match the left.", left.ty.ident, right.ty.ident),
-                        Some(typeck.module_name.clone()),
-                        Some(error_pos),
-                        NoticeLevel::Error,
-                        vec![]
-                    ))
-                }
-            }
-            _ => return Err(Notice::new(
+impl Inference for Local{
+    fn infer_type(&self, typeck: &Typeck) -> Result<(),Notice> {
+        let ty_inner = self.ty.clone().into_inner();
+        let expr_ty = self.expr.get_ty();
+        if ty_inner.ident == "Unknown"{
+            self.ty.replace(Ty{
+                ident: expr_ty.ident.clone(),
+                pos: ty_inner.pos,
+            });
+            return Ok(());
+        }
+        if ty_inner != *expr_ty{
+            return Err(Notice::new(
                 format!("Local Checker"),
-                format!("Compound expressions not implemented yet."),
+                format!(
+                    "Expected an assignment of type {:?} but instead got {:?}", 
+                    ty_inner.ident,
+                    expr_ty.ident
+                ),
                 Some(typeck.module_name.clone()),
-                Some(expr.pos),
+                Some(BiPos{
+                    start: self.pos.start,
+                    end: expr_ty.pos.end
+                }),
                 NoticeLevel::Error,
                 vec![]
-            )),
+            ))
         }
+        Ok(())
+    }
+}
+
+impl<'a> super::Check<'a> for Local{
+    fn check(&self, typeck: &Typeck) -> Result<(), Notice> {
+        self.infer_type(typeck)?;
         Ok(())
     }
 }

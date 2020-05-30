@@ -25,7 +25,7 @@ use notices::{
 };
 
 pub trait Inference{
-    fn infer_type(&self, typeck: &Typeck) -> Result<(),()>;
+    fn infer_type(&self, typeck: &Typeck) -> Result<(),Notice>;
 }
 
 impl Unload for Ty{
