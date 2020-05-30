@@ -31,27 +31,14 @@ use notices::{Notice, NoticeLevel};
 
 use futures::executor::ThreadPool;
 
+///A parse rule, which emits a chunk upon completion. Returns a notice upon error.
 pub trait ParseRule{
-    fn parse(p: &mut Parser) -> Result<(), ()>;
+    fn parse(p: &mut Parser) -> Result<(), Notice>;
 }
 
-pub trait TryParse{
-    fn try_parse(p: &mut Parser) -> Result<Chunk, ParseError>;
-}
-
-pub struct ParseError{
-    cause: Option<Box<ParseError>>,
-    msg: String,
-    pos: Position,
-}
-
-impl ParseError{
-    fn emit_notice(&self, parser: &Parser){
-        if let Some(cause) = &self.cause{
-            cause.emit_notice(parser);
-        }
-        parser.emit_notice(self.pos, NoticeLevel::Error, self.msg.clone());
-    }
+///A trait for parse rules that are part of another parse rule, and require a chunk to be returned as opposed to emitting it.
+pub trait OwnedParse{
+    fn owned_parse(parser: &mut Parser) -> Result<Chunk, Notice>;
 }
 
 const PREV_TOKEN: usize = 0;
@@ -80,17 +67,11 @@ impl ParseManager{
     pub fn enqueue_module(&self, module_name: String, token_rx: Receiver<LexerToken>, hir_tx: Sender<Option<Chunk>>){
         let notice_tx_clone = self.notice_tx.lock().unwrap().clone();
         self.thread_pool.spawn_ok(async move{
-            let parser = Parser::parse(module_name.clone(), hir_tx, token_rx, notice_tx_clone.clone());
-            if let Err(msg) = parser{
-                let notice = Notice{
-                    from: "Parser".to_string(),
-                    file: module_name.clone(),
-                    level: NoticeLevel::ErrorPrint,
-                    msg,
-                    pos: Position::default()
-                };
-                notice_tx_clone.clone().send(Some(notice)).unwrap();
-            };
+            if let Err(notice) = Parser::parse(module_name.clone(), hir_tx, token_rx, notice_tx_clone.clone()){
+                if notice_tx_clone.send(Some(notice)).is_err(){
+                    println!("Failed to send notice to main compiler, perhaps the notice channel has closed prematurely. Report to the author ASAP.")
+                }
+            }
         });
     }
 }
@@ -142,14 +123,28 @@ impl Parser {
     }
 
     #[inline]
-    pub fn advance(&mut self) -> Result<(), String> {
+    pub fn advance(&mut self) -> Result<(), Notice> {
         self.active_tokens[PREV_TOKEN] = self.active_tokens[CURRENT_TOKEN].clone();
         self.active_tokens[CURRENT_TOKEN] = self.active_tokens[NEXT_TOKEN].clone();
         self.active_tokens[NEXT_TOKEN] = match self
             .token_rx
             .recv_timeout(std::time::Duration::from_secs(1))
         {
-            Err(_) => LexerToken::default(),
+            Err(_) =>{ 
+                return Err(Notice::new(
+                    format!("Parser"),
+                    format!("Failed to receive token from tokenizer: token channel closed prematurely.\n
+                        Report this to the author:\n\t
+                        Alex Couch: alcouch65@gmail.com\n\t
+                        Github Issues: https://github.com/beaglelang/beagle-lang/issues\n\t
+                        Turing Tarpit: https://discord.gg/RmgjcES"
+                    ),
+                    Some(self.name.clone()),
+                    Some(self.current_token().pos),
+                    NoticeLevel::Error,
+                    vec![]
+                ))
+            },
             Ok(t) => t,
         };
 
@@ -170,13 +165,7 @@ impl Parser {
             }
         }
 
-        let notice = Notice {
-            from: "Parser".to_string(),
-            msg,
-            pos,
-            file: self.name.clone(),
-            level,
-        };
+        let notice = Notice::new(format!("Parser"), msg, Some(self.name.clone()), Some(pos), level, vec![]);
 
         if let Err(e) = self.notice_tx.send(Some(notice)) {
             eprintln!(
@@ -234,17 +223,19 @@ impl Parser {
     pub fn consume(
         &mut self,
         type_: TokenType
-    ) -> Result<&TokenData, ()> {
+    ) -> Result<&TokenData, Notice> {
         self.advance().unwrap();
         if self.check(type_) {
             Ok(&self.current_token().data)
         } else {
-            self.emit_notice(
-                self.current_token().pos,
+            return Err(Notice::new(
+                format!("Parser"),
+                format!("Expected a '{:?}' but instead got {:?}", type_, self.current_token().type_),
+                Some(self.name.clone()),
+                Some(self.current_token().pos),
                 NoticeLevel::Error,
-                format!("Expected a '{:?}' but instead got {:?}", type_, self.current_token().type_).to_string(),
-            );
-            return Err(());
+                vec![]
+            ));
         }
     }
 
@@ -253,16 +244,41 @@ impl Parser {
         ir_tx: Sender<Option<Chunk>>,
         token_rx: Receiver<LexerToken>,
         notice_tx: Sender<Option<Notice>>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Notice> {
         let mut parser = Parser::new(name, ir_tx, token_rx, notice_tx);
         parser.advance().unwrap();
         parser.advance().unwrap();
         while !parser.check(TokenType::Eof) {
-            if let Err(()) = statements::StatementParser::parse(&mut parser) {
-                if parser.ir_tx.lock().unwrap().send(None).is_err(){
-                    return Err("An error occurred while parsing module".to_string())
-                }
-                return Err("An error occurred while parsing module".to_string());
+            if let Err(notice) = statements::StatementParser::parse(&mut parser) {
+                let send_error = if parser.ir_tx.lock().unwrap().send(None).is_err(){
+                    Some(Notice::new(
+                        format!("Parser"),
+                        format!("Failed to send halt signal to rest of compiler: channel closed prematurely.\n
+                            Report this to the author:\n\t
+                            Alex Couch: alcouch65@gmail.com\n\t
+                            Github Issues: https://github.com/beaglelang/beagle-lang/issues\n\t
+                            Turing Tarpit: https://discord.gg/RmgjcES"
+                        ),
+                        None,
+                        None,
+                        NoticeLevel::Error,
+                        vec![]
+                    ))
+                }else{
+                    None
+                };
+                return Err(Notice::new(
+                    format!("Parser"),
+                    format!("An error occurred during parsing"),
+                    None,
+                    None,
+                    NoticeLevel::Error,
+                    if send_error.is_none(){ 
+                        vec![notice] 
+                    } else{ 
+                        vec![notice, send_error.unwrap()]
+                    }
+                ))
             }
         }
         if parser.ir_tx.lock().unwrap().send(None).is_err(){

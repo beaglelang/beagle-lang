@@ -1,8 +1,8 @@
 use crate::{
     Parser,
     ParseRule,
+    OwnedParse,
     ParseContext,
-    TryParse,
     expressions::ExpressionParser,
     type_::TypeParser,
 };
@@ -21,23 +21,35 @@ use lexer::tokens::{
     TokenData,
 };
 
-use notices::NoticeLevel;
+use notices::{
+    NoticeLevel,
+    Notice,
+};
 
 pub struct LocalVarParser;
 
 impl ParseRule for LocalVarParser{
-    fn parse(parser: &mut Parser) -> Result<(),()>{
+    fn parse(parser: &mut Parser) -> Result<(),Notice>{
         let mut chunk = Chunk::new();
         if parser.context != ParseContext::Local{
-            parser.emit_notice(parser.current_token().pos, NoticeLevel::Error, "Found 'let' outside of local context.".to_string());
-            return Err(())
+            return Err(Notice::new(
+                format!("Local Parser"),
+                format!("Found 'let' outside of local context. This is illegal."),
+                Some(parser.name.clone()),
+                Some(parser.current_token().pos),
+                NoticeLevel::Error,
+                vec![]
+            ))
         }
         if !parser.check_consume(TokenType::KwLet) {
-            parser.emit_notice(
-                parser.current_token().pos,
+            return Err(Notice::new(
+                format!("Local Parser"),
+                format!("Expected keyword 'let' for defining an local variable."),
+                Some(parser.name.clone()),
+                Some(parser.current_token().pos),
                 NoticeLevel::Error,
-                "Expected keyword 'let' for defining an local variable.".to_string(),
-            );
+                vec![]
+            ))
         }
         chunk.write_instruction(HIRInstruction::LocalVar);
         let pos = parser.current_token().pos;
@@ -54,18 +66,26 @@ impl ParseRule for LocalVarParser{
                 "Expected an identifier token, but instead got {}",
                 parser.current_token()
             );
-            parser.emit_notice(pos, NoticeLevel::Error, message);
-            return Err(());
+            return Err(Notice::new(
+                format!("Local Parser"),
+                message,
+                Some(parser.name.clone()),
+                Some(parser.current_token().pos),
+                NoticeLevel::Error,
+                vec![]
+            ));
         }
         let name = match &parser.current_token().data {
             TokenData::String(s) => (*s).to_string(),
             _ => {
-                parser.emit_notice(
-                    pos,
+                return Err(Notice::new(
+                    format!("Local Parser"),
+                    format!("Failed to extract string data from identifier token."),
+                    Some(parser.name.clone()),
+                    Some(parser.current_token().pos),
                     NoticeLevel::Error,
-                    "Failed to extract string data from identifier token.".to_string(),
-                );
-                return Err(());
+                    vec![]
+                ));
             }
         };
         chunk.write_string(name.clone());
@@ -74,23 +94,25 @@ impl ParseRule for LocalVarParser{
             if let Ok(t) = TypeParser::get_type(parser){
                 chunk.write_chunk(t)
             }else{
-                parser.emit_notice(parser.current_token().pos, NoticeLevel::Error, "Could not create type signature for local variable.".to_string());
-                return Err(())
+                return Err(Notice::new(
+                    format!("Local Parser"),
+                    format!("Could not create type signature for local variable."),
+                    Some(parser.name.clone()),
+                    Some(parser.current_token().pos),
+                    NoticeLevel::Error,
+                    vec![]
+                ));
             }
         } else {
-            parser.advance()
-                .expect("Failed to advance parser to next token.");
+            if let Err(notice) = parser.advance(){
+                return Err(notice)
+            };
             chunk.write_pos(parser.current_token().pos);
             chunk.write_instruction(HIRInstruction::Unknown);
         }
         parser.emit_ir_whole(chunk);
 
         if !parser.check_consume(TokenType::Equal) {
-            parser.emit_notice(
-                pos,
-                NoticeLevel::Error,
-                "Local property must be initialized.".to_string(),
-            );
             let found_token = parser.current_token();
             let data = match &found_token.data {
                 TokenData::Float(f) => f.to_string(),
@@ -98,18 +120,35 @@ impl ParseRule for LocalVarParser{
                 TokenData::String(s) => s.clone(),
                 _ => "Unknown".to_string(),
             };
-            parser.emit_notice(
-                found_token.pos,
-                NoticeLevel::Error,
+            let cause = Notice::new(
+                format!("Local Parser"),
                 format!("Expected '=' but instead got {:?}", data),
+                Some(parser.name.clone()),
+                Some(parser.current_token().pos),
+                NoticeLevel::Error,
+                vec![]
             );
-            return Err(());
+            return Err(Notice::new(
+                format!("Local Parser"),
+                format!("Local must be initialized."),
+                Some(parser.name.clone()),
+                Some(parser.current_token().pos),
+                NoticeLevel::Error,
+                vec![cause]
+            ));
         }
 
-        match ExpressionParser::try_parse(parser) {
+        match ExpressionParser::owned_parse(parser) {
             Ok(expr) => parser.emit_ir_whole(expr),
             Err(cause) => {
-                cause.emit_notice(parser);
+                return Err(Notice::new(
+                    format!("Local Parser"),
+                    format!("Could not parse assigned expression for local"),
+                    None,
+                    None,
+                    NoticeLevel::Error,
+                    vec![cause]
+                ))
             }
         }
         Ok(())

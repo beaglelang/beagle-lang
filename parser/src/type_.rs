@@ -9,7 +9,7 @@ use ir::{
 
 use ir_traits::WriteInstruction;
 
-use notices::NoticeLevel;
+use notices::{ Notice, NoticeLevel };
 
 use lexer::tokens::{
     TokenType,
@@ -19,11 +19,10 @@ use lexer::tokens::{
 pub struct TypeParser;
 
 impl TypeParser{
-    pub fn get_type(parser: &mut Parser) -> Result<Chunk, ()>{
+    pub fn get_type(parser: &mut Parser) -> Result<Chunk, Notice>{
         let mut chunk = Chunk::new();
-        if parser.advance().is_err(){
-            parser.emit_notice(parser.current_token().pos, NoticeLevel::Error, "Could not advance parser.".to_string());
-            return Err(())
+        if let Err(notice) = parser.advance(){
+            return Err(notice)
         }
         let current_token = parser.current_token();
         let ret = match (&current_token.type_, &current_token.data) {
@@ -40,14 +39,17 @@ impl TypeParser{
                         chunk.write_string(s.clone());
                     }
                 }
-                Ok(chunk)
+                chunk
             }
-            _ => Err(()),
+            _ => return Err(Notice::new(
+                format!("Type Parser"),
+                format!("Expected a type identifier but instead got {:?}", current_token.type_),
+                Some(parser.name.clone()),
+                Some(current_token.pos),
+                NoticeLevel::Error,
+                vec![]
+            )),
         };
-        if ret.is_ok() {
-            ret
-        } else {
-            Err(())
-        }
+        Ok(ret)
     }
 }

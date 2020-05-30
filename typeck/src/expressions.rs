@@ -1,14 +1,15 @@
 use super::{
-    GetTy,
-    Ty,
-    TyValue,
+    ty::GetTy,
     Typeck,
-    TyValueElement,
+    Load,
     Unload,
-    // Check,
 };
 
+use ty::{ Ty, TyValue, TyValueElement };
+
 use core::pos::BiPos;
+
+use expr::{ Expr, ExprElement, OpKind };
 
 use ir::{
     Chunk,
@@ -22,12 +23,6 @@ use ir_traits::{
 
 use notices::NoticeLevel;
 
-#[derive(Debug, Clone)]
-pub struct Expr{
-    pub kind: Box<ExprElement>,
-    pub ty: Ty,
-    pub pos: BiPos,
-}
 
 impl GetTy for Expr{
     fn get_ty(&self) -> &Ty {
@@ -35,14 +30,7 @@ impl GetTy for Expr{
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum ExprElement{
-    Grouped(Expr),
-    Value(TyValue),
-    UnaryOp(OpKind, Expr),
-    Binary(OpKind, Expr, Expr)
-}
+
 
 impl Unload for Expr{
     fn unload(&self) -> Result<Chunk, ()> {
@@ -99,13 +87,7 @@ impl Unload for ExprElement{
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum OpKind{
-    Add,
-    Min,
-    Mul,
-    Div,
-}
+
 
 impl Unload for OpKind{
     fn unload(&self) -> Result<Chunk, ()> {
@@ -133,7 +115,7 @@ impl GetTy for ExprElement{
     }
 }
 
-impl super::Load for Expr{
+impl Load for Expr{
     type Output = Expr;
 
     fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {

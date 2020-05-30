@@ -9,27 +9,59 @@ pub enum NoticeLevel {
     Notice,
     Warning,
     Error,
-    ErrorPrint,
-    WarnPrint,
-    NoticePrint,
     Halt,
+}
+
+
+#[derive(Debug, Clone)]
+///The source location of a notice
+pub struct NoticeSource{
+    ///File name
+    pub file: String,
+    ///Location in the file notice is related to
+    pub pos: BiPos
 }
 
 #[derive(Debug, Clone)]
 pub struct Notice {
     pub from: String,
+    ///The actual raw message of the notice to be displayed
     pub msg: String,
-    pub pos: BiPos,
-    pub file: String,
+    ///Is this a notice about a source, if so, this will be Some(source)
+    pub source: Option<NoticeSource>,
+    ///The level of the notice which determines how to print it.
     pub level: NoticeLevel,
+    ///A child notice is a notice that is part of a series of notices. This is so that they can be preorderly printed together
+    pub children: Vec<Notice>
 }
 
 impl Notice {
+    pub fn new(from: String, msg: String, file: Option<String>, pos: Option<BiPos>, level: NoticeLevel, children: Vec<Notice>) -> Self{
+        Self{
+            from,
+            msg,
+            source: if let Some(file) = file{
+                if let Some(pos) = pos{
+                    Some(NoticeSource{
+                        file,
+                        pos
+                    })
+                }else{
+                    None
+                }
+            }else{
+                None
+            },
+            level,
+            children
+        }
+    }
+
     pub fn report(self, source: Option<&str>) {
         let (colour, prefix) = match self.level {
-            NoticeLevel::Notice | NoticeLevel::NoticePrint => (ansi::Fg::Cyan, "[-]: "),
-            NoticeLevel::Warning | NoticeLevel::WarnPrint => (ansi::Fg::Yellow, "[*]: "),
-            NoticeLevel::Error | NoticeLevel::ErrorPrint => (ansi::Fg::Red, "[!]: "),
+            NoticeLevel::Notice => (ansi::Fg::Cyan, "[-]: "),
+            NoticeLevel::Warning => (ansi::Fg::Yellow, "[*]: "),
+            NoticeLevel::Error => (ansi::Fg::Red, "[!]: "),
             NoticeLevel::Halt => return,
         };
 
@@ -42,14 +74,19 @@ impl Notice {
             self.msg
         );
 
-        println!("\tat [{}:({},{}) to ({},{})]\n", self.file, self.pos.start.0 + 1, self.pos.start.1 + 1, self.pos.end.0 + 1, self.pos.end.1 + 1);
-
-        if self.level == NoticeLevel::NoticePrint || self.level == NoticeLevel::WarnPrint || self.level == NoticeLevel::ErrorPrint{
+        
+        if self.source.is_none(){
             return;
         }
 
+        let _source = self.source.unwrap();
+        let file = _source.file;
+        let pos = _source.pos;
+    
+        println!("\tat [{}:({},{}) to ({},{})]\n", file, pos.start.0 + 1, pos.start.1 + 1, pos.end.0 + 1, pos.end.1 + 1);
+    
         if let Some(src) = source {
-            if let Some((start_line, lines, squiggly)) = self.pos.locate_in_source(src) {
+            if let Some((start_line, lines, squiggly)) = pos.locate_in_source(src) {
                 lines.iter().enumerate().for_each(|(i, line)| {
                     println!(
                         "\t{}{:4}{} | {}",
@@ -59,7 +96,7 @@ impl Notice {
                         line
                     );
 
-                    if i == self.pos.start.0 - 1 {
+                    if i == pos.start.0 {
                         println!("\t{}---- | {}{}", colour, squiggly, ansi::Fg::Reset);
                     };
                 });

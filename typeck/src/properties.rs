@@ -1,14 +1,21 @@
 use super::{
-    ident::Identifier,
-    expressions::{
-        Expr,
-        ExprElement
-    },
-    Mutability,
-    Ty,
     Typeck,
-    Unload
+    Load,
+    Unload,
 };
+
+use ty::{
+    Ty,
+};
+
+use mutable::Mutability;
+
+use expr::{
+    Expr,
+    ExprElement
+};
+
+use ident::Identifier;
 
 use core::pos::{
     BiPos,
@@ -28,16 +35,11 @@ use ir_traits::{
 
 use notices::NoticeLevel;
 
-#[derive(Debug, Clone)]
-pub struct Property{
-    pub ident: Identifier,
-    pub ty: RefCell<Ty>,
-    pub expr: Expr,
-    pub pos: BiPos,
-    pub mutable: Mutability,
-}
+use stmt::{
+    property::Property
+};
 
-impl super::Load for Property{
+impl Load for Property{
     type Output = Property;
 
     fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {

@@ -67,7 +67,7 @@ impl Driver {
         self.lexer_manager.enqueue_module(name.clone().to_string(), instr.clone(), token_tx);
         self.parser_manager.enqueue_module(name.clone().to_string(), token_rx, hir_tx);
         self.typeck_manager.enqueue_module(name.clone().to_string(), hir_rx, typeck_tx);
-        self.memmy_manager.enqueue_module(name.clone().to_string(), typeck_rx, mir_tx);
+        // self.memmy_manager.enqueue_module(name.clone().to_string(), typeck_rx, mir_tx);
 
         let notice_task = async {
             loop {
@@ -92,14 +92,14 @@ impl Driver {
         //     }
         // };
 
-        // let parser_ir_task = async{
-        //     println!("test");
-        //     while let Ok(Some(chunk)) = mir.recv() {
-        //         println!("{:?}", chunk);
-        //     }
-        // };
+        let parser_ir_task = async{
+            println!("test");
+            while let Ok(Some(chunk)) = typeck_rx.recv() {
+                println!("{}", chunk);
+            }
+        };
 
-        futures::join!(notice_task);
+        futures::join!(parser_ir_task, notice_task);
         
         Ok(Box::new(module))
     }

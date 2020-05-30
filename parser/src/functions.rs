@@ -11,7 +11,7 @@ use lexer::tokens::{
     TokenType,
 };
 
-use notices::NoticeLevel;
+use notices::{ NoticeLevel, Notice };
 
 use ir::{
     Chunk,
@@ -23,7 +23,7 @@ use ir_traits::WriteInstruction;
 pub struct FunctionParser;
 
 impl ParseRule for FunctionParser{
-    fn parse(parser: &mut Parser) -> Result<(),()>{
+    fn parse(parser: &mut Parser) -> Result<(),Notice>{
         let mut chunk = Chunk::new();
         let lpos = parser.current_token().pos;
         if !parser.check_consume(TokenType::KwFun) {
@@ -32,7 +32,17 @@ impl ParseRule for FunctionParser{
                 parser.current_token()
             );
             parser.emit_notice(lpos, NoticeLevel::Error, message);
-            return Err(());
+            return Err(Notice::new(
+                format!("Function Parser"), 
+                format!(
+                    "Expected a fun keyword token, but instead got {}",
+                    parser.current_token()
+                ), 
+                Some(parser.name.clone()), 
+                Some(lpos), 
+                NoticeLevel::Error,
+                vec![]
+            ));
         }
         chunk.write_instruction(HIRInstruction::Fn);
         chunk.write_pos(lpos.clone());
@@ -42,23 +52,47 @@ impl ParseRule for FunctionParser{
                 parser.current_token()
             );
             parser.emit_notice(lpos, NoticeLevel::Error, message);
-            return Err(());
+            return Err(Notice::new(
+                format!("Function Parser"), 
+                format!(
+                    "Expected an identifier token, but instead got {}",
+                    parser.current_token()
+                ), 
+                Some(parser.name.clone()), 
+                Some(parser.current_token().pos), 
+                NoticeLevel::Error,
+                vec![]
+            ));
         }
         let name = match &parser.current_token().data {
             TokenData::String(s) => (*s).to_string(),
             _ => {
-                parser.emit_notice(
-                    lpos,
+                return Err(Notice::new(
+                    format!("Function Parser"), 
+                    format!(
+                        "Failed to extract string data from identifier token.",
+                    ), 
+                    Some(parser.name.clone()), 
+                    Some(parser.current_token().pos), 
                     NoticeLevel::Error,
-                    "Failed to extract string data from identifier token.".to_string(),
-                );
-                return Err(());
+                    vec![]
+                ));
             }
         };
         chunk.write_string(name);
         chunk.write_pos(parser.current_token().pos);
         if parser.advance().is_err(){
-            return Err(())
+            return Err(Notice::new(
+                format!("Function Parser"), 
+                format!(
+                    "Failed to advance parser. This is a bug in the compiler, please report to the author.\n
+                    It's possible that the tokenizer closed its channel prematurely, which shouldn't happen.",
+                ), 
+                Some(parser.name.clone()), 
+                Some(parser.current_token().pos), 
+                NoticeLevel::Error,
+                vec![]
+            ));
         }
         if parser.check(TokenType::LParen){
             loop{
@@ -72,14 +106,18 @@ impl ParseRule for FunctionParser{
                 let param_name = match parser.consume(TokenType::Identifier) {
                     Ok(TokenData::String(s)) => (*s).to_string(),
                     Ok(_) => {
-                        parser.emit_notice(
-                            lpos,
+                        return Err(Notice::new(
+                            format!("Function Parser"), 
+                            format!(
+                                "Failed to extract string data from identifier token.",
+                            ), 
+                            Some(parser.name.clone()), 
+                            Some(parser.current_token().pos), 
                             NoticeLevel::Error,
-                            "Failed to extract string data from identifier token.".to_string(),
-                        );
-                        return Err(());
+                            vec![]
+                        ));
                     },
-                    Err(()) => return Err(())
+                    Err(notice) => return Err(notice),
                 };
                 param_chunk.write_pos(loc);
                 param_chunk.write_string(param_name);
@@ -101,8 +139,8 @@ impl ParseRule for FunctionParser{
 
         parser.emit_ir_whole(chunk);
 
-        if parser.consume(TokenType::LCurly).is_err(){
-            return Err(())
+        if let Err(notice) = parser.consume(TokenType::LCurly){
+            return Err(notice);
         }
 
         parser.context = ParseContext::Local;
@@ -113,8 +151,8 @@ impl ParseRule for FunctionParser{
         parser.emit_ir_whole(body_chunk);
         while !parser.check_consume(TokenType::RCurly){
             parser.advance().unwrap();
-            if LocalStatementParser::parse(parser).is_err(){
-                return Err(())
+            if let Err(notice) = LocalStatementParser::parse(parser){
+                return Err(notice)
             }
         }
         let mut end_chunk = Chunk::new();

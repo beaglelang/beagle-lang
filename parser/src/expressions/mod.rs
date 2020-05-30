@@ -1,7 +1,6 @@
 use super::{
     Parser,
-    TryParse,
-    ParseError,
+    OwnedParse,
 };
 
 use ir::{
@@ -12,83 +11,65 @@ use lexer::tokens::{
     TokenType,
 };
 
+use notices::{
+    Notice,
+};
+
 mod binary;
 mod literal;
 
 pub struct ExpressionParser;
 
-impl TryParse for ExpressionParser{
-    fn try_parse(parser: &mut Parser) -> Result<Chunk,ParseError>{
+impl OwnedParse for ExpressionParser{
+    fn owned_parse(parser: &mut Parser) -> Result<Chunk,Notice>{
         let mut chunk = Chunk::new();
         let next = parser.next_token();
         match &next.type_{
             TokenType::Plus => {
-                match binary::AddParser::try_parse(parser){
+                match binary::AddParser::owned_parse(parser){
                     Ok(expr) => {
                         chunk.write_chunk(expr);
                     }
                     Err(msg) => {
-                        let pos = parser.current_token().pos;
-                        return Err(ParseError{
-                            cause: Some(Box::new(msg)),
-                            msg: format!("An error occurred while trying to parse add expression"),
-                            pos,
-                        })
+                        return Err(msg)
                     }
                 }
             }
             TokenType::Minus => {
-                match binary::SubParser::try_parse(parser){
+                match binary::SubParser::owned_parse(parser){
                     Ok(expr) => {
                         chunk.write_chunk(expr);
                     }
                     Err(msg) => {
-                        return Err(ParseError{
-                            cause: Some(Box::new(msg)),
-                            msg: format!("An error occurred while trying to parse sub expression"),
-                            pos: parser.current_token().pos,
-                        })
+                        return Err(msg)
                     }
                 }
             }
             TokenType::Star => {
-                match binary::MulParser::try_parse(parser){
+                match binary::MulParser::owned_parse(parser){
                     Ok(expr) => {
                         chunk.write_chunk(expr);
                     }
                     Err(msg) => {
-                        return Err(ParseError{
-                            cause: Some(Box::new(msg)),
-                            msg: format!("An error occurred while trying to parse multiply expression"),
-                            pos: parser.current_token().pos,
-                        })
+                        return Err(msg)
                     }
                 }
             }
             TokenType::Slash => {
-                match binary::DivParser::try_parse(parser){
+                match binary::DivParser::owned_parse(parser){
                     Ok(expr) => {
                         chunk.write_chunk(expr);
                     }
                     Err(msg) => {
-                        return Err(ParseError{
-                            cause: Some(Box::new(msg)),
-                            msg: format!("An error occurred while trying to parse division expression"),
-                            pos: parser.current_token().pos,
-                        })
+                        return Err(msg)
                     }
                 }
             }
             _ => {
-                match literal::LiteralParser::try_parse(parser){
+                match literal::LiteralParser::owned_parse(parser){
                     Ok(literal) => chunk.write_chunk(literal),
                     Err(msg) => {
-                        let pos = parser.next_token().pos;
-                        return Err(ParseError{
-                            cause: Some(Box::new(msg)),
-                            msg: format!("An error occurred while trying to parse literal"),
-                            pos,
-                        })
+                        return Err(msg)
                     }
                 }
             }

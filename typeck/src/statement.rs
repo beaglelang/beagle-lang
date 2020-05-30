@@ -1,34 +1,27 @@
-use super::{
-    properties::Property,
+use stmt::{
+    property::Property,
     fun::Fun,
-    locals::Local,
+    local::Local,
+    Statement,
+    StatementKind
 };
 
 use core::pos::BiPos;
 
 use ir::{
     Chunk,
-    hir::HIRInstruction
+    hir::HIRInstruction,
 };
 
-use super::Typeck;
+use super::{
+    Typeck,
+    Load,
+    Unload,
+};
 use ir_traits::ReadInstruction;
 use notices::NoticeLevel;
 
-#[derive(Debug, Clone)]
-pub struct Statement{
-    pub kind: StatementKind,
-    pub pos: BiPos,
-}
-
-#[derive(Debug, Clone)]
-pub enum StatementKind{
-    Property(Property),
-    Fun(Fun),
-    Local(Local),
-}
-
-impl super::Load for Statement{
+impl Load for Statement{
     type Output = Statement;
 
     fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
@@ -83,7 +76,7 @@ impl<'a> super::Check<'a> for Statement{
     }
 }
 
-impl super::Unload for Statement{
+impl Unload for Statement{
     fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
         match &self.kind{

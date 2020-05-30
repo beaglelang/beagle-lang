@@ -3,7 +3,6 @@ use lazy_static::lazy_static;
 use std::collections::{
     HashMap,
 };
-use std::io::Result;
 use std::sync::{mpsc::Sender, Arc, Mutex};
 use futures::{
   executor::ThreadPool,
@@ -48,29 +47,9 @@ impl LexerManager{
         let parser_tx_clone = parser_tx.clone();
         let input_clone = input.clone();
         self.thread_pool.spawn_ok(async move{
-            let lexer_result = Lexer::new(input_clone, Arc::new(Mutex::new(parser_tx_clone)));
-            let mut lexer = if let Ok(l) = lexer_result{
-                l
-            }else{
-                let notice = Notice{
-                    from: "Lexer".to_string(),
-                    file: module_name.clone().to_string(),
-                    level: NoticeLevel::Error,
-                    msg: "Failed to start lexer. Unknown reasons. Please report this to author.".to_string(),
-                    pos: BiPos::default()
-                };
-                notice_tx_clone.lock().expect("Failed to acquire lock on notice sender.").send(Some(notice)).unwrap();
-                return
-            };
+            let mut lexer = Lexer::new(module_name.clone(), input_clone, Arc::new(Mutex::new(parser_tx_clone)));
             let tokenizer_result = lexer.start_tokenizing();
-            if let Err(msg) = tokenizer_result{
-                let notice = Notice{
-                    from: "Lexer".to_string(),
-                    file: module_name.clone().to_string(),
-                    level: NoticeLevel::Error,
-                    msg,
-                    pos: BiPos::default()
-                };
+            if let Err(notice) = tokenizer_result{
                 notice_tx_clone.lock().expect("Failed to acquire lock on notice sender.").send(Some(notice)).unwrap();
             };
         });
@@ -78,6 +57,7 @@ impl LexerManager{
 }
 
 pub struct Lexer {
+    module_name: String,
     input: String,
     source: Option<String>,
     char_idx: usize,
@@ -88,18 +68,20 @@ pub struct Lexer {
 
 impl<'a, 'b> Lexer{
     pub fn new(
+        module_name: String,
         input: String,
         token_tx: Arc<Mutex<Sender<LexerToken>>>,
-    ) -> Result<Box<Lexer>> {
+    ) -> Box<Lexer> {
         let input_str = input.clone();
         let lexer = Box::new(Lexer {
+            module_name,
             input: input_str.clone(),
             source: Some(input_str),
             char_idx: 0,
             current_pos: BiPos::default(),
             token_sender: token_tx,
         });
-        Ok(lexer)
+        lexer
     }
 
     fn advance_end(&mut self) -> Option<char> {
@@ -292,7 +274,7 @@ impl<'a, 'b> Lexer{
         })
     }
 
-    fn get_token(&mut self) -> Option<tokens::LexerToken> {
+    fn get_token(&mut self) -> Result<Option<tokens::LexerToken>, Notice> {
         // println!("Processing char: {:?}", self.peek());
         match self.peek() {
             Some(c) => {
@@ -301,7 +283,7 @@ impl<'a, 'b> Lexer{
                         if c == '\n'{
                             self.current_pos.next_line();
                         }
-                        return None
+                        return Ok(None)
                     }
                     c if c.is_alphabetic() => {
                         let start = self.char_idx;
@@ -317,32 +299,25 @@ impl<'a, 'b> Lexer{
                         };
                         let identifier = &self.input[start..end];
                         let type_ = self.is_keyword(identifier);
-                        return Some(tokens::LexerToken {
+                        return Ok(Some(tokens::LexerToken {
                             type_,
                             data: tokens::TokenData::String(identifier.to_string()),
                             pos: self.current_pos,
-                        });
+                        }));
                     }
                     '\"' => {
                         return match self.string() {
                             Some(t) => {
-                                Some(t)
+                                Ok(Some(t))
                             },
                             None => {
-                                return Some(tokens::LexerToken {
-                                    data: tokens::TokenData::String(format!(
-                                        "Unable to get string from input @ {:?}",
-                                        self.current_pos
-                                    )),
-                                    type_: tokens::TokenType::Err,
-                                    pos: self.current_pos,
-                                })
+                                return Err(Notice::new(format!("Lexer"), format!("Unable to parse string"), Some(self.module_name.clone()), Some(self.current_pos), NoticeLevel::Error, vec![]))
                             }
                         }
                     }
                     c if c.is_digit(10) => {
                         let number = self.number();
-                        return number;
+                        return Ok(number);
                     },
                     c if self.is_delimiter(c).is_some() => {
                         // println!("Found a delimiter: {}", c.clone());
@@ -352,33 +327,29 @@ impl<'a, 'b> Lexer{
                             pos: self.current_pos,
                         };
                         self.advance();
-                        return Some(token);
+                        return Ok(Some(token));
                     }
                     _ => {
-                        return Some(tokens::LexerToken {
-                            type_: tokens::TokenType::Err,
-                            data: tokens::TokenData::String(format!("Invalid character")),
-                            pos: self.current_pos,
-                        })
+                        return Err(Notice::new(format!("Lexer"), format!("Invalid character"), Some(self.module_name.clone()), Some(self.current_pos), NoticeLevel::Error, vec![]))
                     }
                 }
                 
             },
-            None => Some(tokens::LexerToken{
+            None => Ok(Some(tokens::LexerToken{
                 type_: tokens::TokenType::Eof, 
                 data: tokens::TokenData::None, 
                 pos: self.current_pos
-            })
+            }))
         }
     }
 
-    pub fn start_tokenizing(&mut self) -> std::result::Result<(), String> {
+    pub fn start_tokenizing(&mut self) -> std::result::Result<(), Notice> {
         let token_sender_clone = self.token_sender.clone();
         let guard = token_sender_clone.lock().unwrap();
         loop {
             let token = self.get_token();
             match token {
-                Some(t) => {
+                Ok(Some(t)) => {
                     // self.advance();
                     // println!("{}", t.clone());
                     match guard.send(t.clone()){
@@ -387,22 +358,18 @@ impl<'a, 'b> Lexer{
                                 tokens::TokenType::Eof => {
                                     break;
                                 }
-                                tokens::TokenType::Err => {
-                                    return Err(format!(
-                                        "An error occurred while tokenizing input: {:?}",
-                                        t
-                                    )
-                                    .to_string())
-                                }
                                 _ => continue,
                             };
                         }
                         Err(_) => return Ok(())
                     }
                 }
-                None => {
+                Ok(None) => {
                     self.advance();
                     continue;
+                }
+                Err(notice) => {
+                    return Err(Notice::new(format!("Lexer"), format!("An error occurred during tokenization."), None, None, NoticeLevel::Error, vec![notice]));
                 }
             }
         }

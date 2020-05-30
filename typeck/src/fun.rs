@@ -1,39 +1,32 @@
 use super::{
-    statement::{
-        Statement,
-    },
-    Ty,
-    ident::Identifier,
     Check,
-    Unload,
+};
+
+use ident::Identifier;
+use ty::Ty;
+use stmt::{
+    Statement,
+    fun::{
+        Fun,
+        FunParam
+    },
 };
 
 use core::pos::BiPos;
 
-use ir::Chunk;
+use ir::{
+    Chunk,
+};
 
-use super::Typeck;
+use super::{
+    Typeck,
+    Load,
+    Unload,
+};
 
 use ir::hir::HIRInstruction;
 use ir_traits::{ReadInstruction, WriteInstruction};
 use notices::NoticeLevel;
-
-
-#[derive(Debug, Clone)]
-pub struct Fun{
-    pub ident: Identifier,
-    pub ty: Ty,
-    pub params: Vec<FunParam>,
-    pub body: Vec<Statement>,
-    pub pos: BiPos,
-}
-
-#[derive(Debug, Clone)]
-pub struct FunParam{
-    pub ident: Identifier,
-    pub ty: Ty,
-    pub pos: BiPos
-}
 
 impl Unload for FunParam{
     fn unload(&self) -> Result<Chunk, ()> {
@@ -63,7 +56,7 @@ impl<'a> Check<'a> for Fun{
     }
 }
 
-impl super::Load for Fun{
+impl Load for Fun{
     type Output = Fun;
 
     fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
@@ -74,17 +67,9 @@ impl super::Load for Fun{
                 return Err(())
             }
         };
-        let name = chunk.read_string();
-        let name_pos = match chunk.read_pos(){
-            Ok(pos) => pos,
-            Err(msg) => {
-                typeck.emit_notice(msg, NoticeLevel::Error, BiPos::default())?;
-                return Err(())
-            } 
-        };
-        let ident = Identifier{
-            ident: name.to_owned(),
-            pos: name_pos,
+        let ident = match Identifier::load(chunk, typeck){
+            Ok(ident) => ident,
+            Err(()) => return Err(())
         };
         let mut params = vec![];
         while let Some(ins) = chunk.read_instruction() as Option<HIRInstruction>{
@@ -92,73 +77,30 @@ impl super::Load for Fun{
                 break;
             }
 
-            let pos = match chunk.read_pos(){
-                Ok(pos) => pos,
-                Err(msg) => {
-                    typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
-                    return Err(())
-                }
-            };
             if ins != HIRInstruction::FnParam{
                 typeck.emit_notice(format!("Expected an fn param instruction but instead got {:?}; this is a bug in the compiler.", ins), NoticeLevel::Error, pos)?;
                 return Err(())
             }
 
-            let param_name = chunk.read_string();
-            let param_type_pos = match chunk.read_pos(){
-                Ok(pos) => pos,
-                Err(msg) => {
-                    typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
-                    return Err(())
-                }
+            let param_ident = match Identifier::load(chunk, typeck){
+                Ok(ident) => ident,
+                Err(()) => return Err(())
             };
-            let param_type = chunk.read_instruction() as Option<HIRInstruction>;
-            let param_typename = match param_type{
-                Some(type_) => {
-                    if type_ == HIRInstruction::Custom{
-                        Some(chunk.read_string().to_string())
-                    }else{
-                        Some(format!("{:?}", type_))
-                    }
-                }
-                None => {
-                    typeck.emit_notice(format!("Expected a param type annotation but instead got none. This is a bug in the compiler."), NoticeLevel::Error, pos)?;
-                    return Err(())
-                }
+            let param_type = match Ty::load(chunk, typeck){
+                Ok(ty) => ty,
+                Err(()) => return Err(())
             };
             params.push(FunParam{
-                ident: Identifier{
-                    ident: param_name.to_owned(),
-                    pos
-                },
-                ty: Ty{
-                    ident: param_typename.unwrap(),
-                    pos: param_type_pos
-                },
+                ident: param_ident,
+                ty: param_type,
                 pos
             });
         }
-        let fun_type_pos = match chunk.read_pos(){
-            Ok(pos) => pos,
-            Err(msg) => {
-                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
-                return Err(())
-            }
+        let return_type = match Ty::load(chunk, typeck){
+            Ok(ty) => ty,
+            Err(()) => return Err(())
         };
-        let return_type = chunk.read_instruction() as Option<HIRInstruction>;
-        let typename = match return_type{
-            Some(name_ins) => {
-                if name_ins == HIRInstruction::Custom{
-                    chunk.read_string().to_owned()
-                }else{
-                    format!("{:?}", name_ins)
-                }
-            }
-            None => {
-                typeck.emit_notice(format!("Expected a return type instruction but instead got {:?}; this is compiler bug.", return_type.unwrap()), NoticeLevel::Error, fun_type_pos)?;
-                return Err(())
-            }
-        };
+
         let block_chunk = match typeck.chunk_rx.recv(){
             Ok(Some(chunk)) => {
                 chunk
@@ -201,10 +143,7 @@ impl super::Load for Fun{
         }
         let fun = Fun{
             ident,
-            ty: Ty{
-                ident: typename,
-                pos: fun_type_pos,
-            },
+            ty: return_type,
             body: block,
             params,
             pos

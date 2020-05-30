@@ -1,7 +1,6 @@
 use crate::{
     Parser,
-    TryParse,
-    ParseError,
+    OwnedParse,
 };
 
 use ir::{
@@ -14,12 +13,17 @@ use lexer::tokens::{
     TokenType
 };
 
+use notices::{
+    Notice,
+    NoticeLevel,
+};
+
 use ir_traits::WriteInstruction;
 
 pub struct LiteralParser;
 
-impl TryParse for LiteralParser{
-    fn try_parse(parser: &mut Parser) -> Result<Chunk, ParseError>{
+impl OwnedParse for LiteralParser{
+    fn owned_parse(parser: &mut Parser) -> Result<Chunk, Notice>{
         let token = parser.current_token();
         let mut chunk = Chunk::new();
         match &token.type_{
@@ -58,11 +62,14 @@ impl TryParse for LiteralParser{
                 chunk.write_pos(token.pos);
                 chunk.write_bool(false);
             }
-            _ => return Err(ParseError{
-                cause: None,
-                msg: format!("Unrecognized expression literal: {:?}", token),
-                pos: token.pos,
-            })
+            _ => return Err(Notice::new(
+                format!("Literal Parser"),
+                format!("Unrecognized token: {:?}", token.type_),
+                Some(parser.name.clone()),
+                Some(token.pos),
+                NoticeLevel::Error,
+                vec![]
+            ))
         }
         Ok(chunk)
     }

@@ -1,7 +1,8 @@
 use super::{
-    statement::Statement,
     Typeck
 };
+
+use stmt::Statement;
 
 #[derive(Debug, Clone)]
 pub struct Module{

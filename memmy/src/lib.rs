@@ -117,13 +117,7 @@ impl MemmyGenerator{
 
     fn emit_notice(&self, msg: String, level: NoticeLevel, pos: BiPos) -> Result<(),()>{
         if self.notice_tx.send(
-            Some(Notice{
-                from: "Memmy".to_string(),
-                pos,
-                msg,
-                file: self.module_name.clone(),
-                level
-            })
+            Some(Notice::new(format!("Memmy"), msg, Some(self.module_name.clone()), Some(pos), level, vec![]))
         ).is_err(){
             return Err(())
         }

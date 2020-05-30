@@ -15,3 +15,4 @@ syn = "1.0"
 quote = "1.0"
 ir_derive = { path = "../ir_derive" }
 ir_traits = { path = "../ir_traits" }
+ansi_term = "0.12"

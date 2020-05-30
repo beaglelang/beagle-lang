@@ -1,18 +1,14 @@
 use super::{
-    Unload
+    Typeck,
+    Load,
+    Unload,
 };
 
 use ir::Chunk;
 
+use ident::Identifier;
+use notices::NoticeLevel;
 use core::pos::BiPos;
-///A part of an IR that contains an identifier.
-#[derive(Debug, Clone)]
-pub struct Identifier{
-    ///The identifier
-    pub ident: String,
-    ///The in source location of the identifier.
-    pub pos: BiPos,
-}
 
 impl Unload for Identifier{
     fn unload(&self) -> Result<Chunk, ()> {
@@ -20,5 +16,23 @@ impl Unload for Identifier{
         chunk.write_pos(self.pos);
         chunk.write_string(self.ident.clone());
         Ok(chunk)
+    }
+}
+
+impl Load for Identifier{
+    type Output = Identifier;
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
+        let pos = match chunk.read_pos(){
+            Ok(pos) => pos,
+            Err(msg) => {
+                typeck.emit_notice(msg, NoticeLevel::Error, BiPos::default())?;
+                return Err(())
+            }
+        };
+        let ident = chunk.read_string();
+        Ok(Self{
+            ident: ident.to_string(),
+            pos,
+        })
     }
 }

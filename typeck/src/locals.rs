@@ -1,14 +1,16 @@
 use super::{
-    expressions::{
-        Expr,
-        ExprElement
-    },
-    Mutability,
-    ident::Identifier,
-    Ty,
     Typeck,
+    Load,
     Unload,
 };
+
+use ty::Ty;
+use expr::{
+    Expr,
+    ExprElement    
+};
+use ident::Identifier;
+use mutable::Mutability;
 
 use core::pos::BiPos;
 
@@ -16,24 +18,18 @@ use std::cell::RefCell;
 
 use ir::{
     Chunk,
-    hir::HIRInstruction
+    hir::HIRInstruction,
 };
 
 use ir_traits::{
-    ReadInstruction,
     WriteInstruction
 };
 
 use notices::NoticeLevel;
 
-#[derive(Debug, Clone)]
-pub struct Local{
-    pub ident: Identifier,
-    pub ty: RefCell<Ty>,
-    pub expr: Expr,
-    pub pos: BiPos,
-    pub mutable: Mutability
-}
+use stmt::{
+    local::Local,
+};
 
 impl<'a> super::Check<'a> for Local{
     fn check(&self, typeck: &Typeck) -> Result<(), ()> {
@@ -78,7 +74,7 @@ impl<'a> super::Check<'a> for Local{
     }
 }
 
-impl super::Load for Local{
+impl Load for Local{
     type Output = Local;
 
     fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()> {
@@ -89,43 +85,18 @@ impl super::Load for Local{
                 return Err(())
             }
         };
-        let mutable = chunk.read_bool();
-        let mut_pos = match chunk.read_pos(){
-            Ok(pos) => pos,
-            Err(msg) => {
-                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
-                return Err(())
-            }
+        let mutable = match Mutability::load(chunk, typeck){
+            Ok(mutable) => mutable,
+            Err(()) => return Err(())
         };
-        let name = chunk.read_string();
-        let name_pos = match chunk.read_pos(){
-            Ok(pos) => pos,
-            Err(msg) => {
-                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
-                return Err(())
-            }
+        let ident = match Identifier::load(chunk, typeck){
+            Ok(ident) => ident,
+            Err(()) => return Err(())
         };
 
-        let type_pos = match chunk.read_pos(){
-            Ok(pos) => pos,
-            Err(msg) => {
-                typeck.emit_notice(msg, NoticeLevel::ErrorPrint, BiPos::default())?;
-                return Err(())
-            }
-        };
-        let type_ins: Option<HIRInstruction> = chunk.read_instruction();
-        let typename = match type_ins{
-            Some(type_ins) => {
-                if type_ins == HIRInstruction::Custom{
-                    chunk.read_string().to_owned()
-                }else{
-                    format!("{:?}", type_ins)
-                }
-            }
-            None => {
-                typeck.emit_notice(format!("Expected a return type instruction but instead got {:?}; this is compiler bug.", type_ins.unwrap()), NoticeLevel::Error, type_pos)?;
-                return Err(())
-            }
+        let ty = match Ty::load(chunk, typeck){
+            Ok(ty) => ty,
+            Err(()) => return Err(())
         };
 
         let expr_chunk = if let Ok(Some(expr_chunk)) = typeck.chunk_rx.recv(){
@@ -140,20 +111,11 @@ impl super::Load for Local{
         };
         return Ok(
             Local{
-                ident: Identifier{
-                    ident: name.to_string(),
-                    pos: name_pos,
-                },
+                ident,
                 pos,
-                ty: RefCell::new(Ty{
-                    ident: typename,
-                    pos: type_pos
-                }),
+                ty: RefCell::new(ty),
                 expr,
-                mutable: Mutability{
-                    mutable,
-                    pos: mut_pos
-                }
+                mutable
             }
         )
     }

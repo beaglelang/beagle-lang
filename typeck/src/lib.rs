@@ -1,9 +1,6 @@
 use ir::{
     Chunk,
-    hir::HIRInstruction,
 };
-
-use ir_traits::WriteInstruction;
 
 use notices::*;
 use std::sync::{
@@ -12,7 +9,6 @@ use std::sync::{
     },
 };
 
-use core::pos::BiPos;
 use futures::executor::ThreadPool;
 
 use core::pos::BiPos as Position;
@@ -20,13 +16,28 @@ use core::pos::BiPos as Position;
 mod expressions;
 
 mod statement;
-use statement::Statement;
+use stmt::Statement;
 mod properties;
 mod fun;
 mod locals;
 mod modules;
-mod inference;
+mod ty;
 mod ident;
+mod mutable;
+
+///This trait provides an associated function for loading typeck IR into the current typeck instance.
+///Output is what type is being returned upon success. Due to the fact that traits don't have known sizes at compiletime, an associated type will do.
+///This trait is implemented for different kinds of IR such as a [statements::Statement] or [properties::Property].
+pub trait Load{
+    ///The type being loaded/returned upon success by [load].
+    type Output;
+    ///Convert the given [chunk] to an IR for the given [typeck].
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()>;
+}
+
+pub trait Unload{
+    fn unload(&self) -> Result<Chunk, ()>;
+}
 
 ///A global manager for all [typeck]s. All typeck's are added to a threadpool upon a call to [enqueueModule].
 ///A single notice send channel is shared between all typeck's.
@@ -96,91 +107,6 @@ impl TypeckManager{
     }
 }
 
-///This trait provides an associated function for loading typeck IR into the current typeck instance.
-///Output is what type is being returned upon success. Due to the fact that traits don't have known sizes at compiletime, an associated type will do.
-///This trait is implemented for different kinds of IR such as a [statements::Statement] or [properties::Property].
-pub trait Load{
-    ///The type being loaded/returned upon success by [load].
-    type Output;
-    ///Convert the given [chunk] to an IR for the given [typeck].
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, ()>;
-}
-
-pub trait Unload{
-    fn unload(&self) -> Result<Chunk, ()>;
-}
-
-///An element of a [TyValue]. 
-///This has to do with primitive data since primitives are built in. This also allows for convenience when checking for non-primitives types.
-///If you have a class called `A`, then the TyValueElement for `A` would be `TyValueElement::Custom("A"). This will then be used during type checking to ensure that
-///Values such as calling A's constructor is matched with the required type of the statement.
-///```
-/////This will have a TyValueElement of Custom("A") during the type checking of the constructor.
-///let a = A()
-///```
-#[derive(Debug, Clone, PartialEq)]
-pub enum TyValueElement{
-    Integer(i32),
-    Float(f32),
-    String(String),
-    Bool(bool),
-    Custom(String),
-    Unit
-}
-
-impl Unload for TyValueElement{
-    fn unload(&self) -> Result<Chunk, ()> {
-        let mut chunk = Chunk::new();
-        match self{
-            TyValueElement::Bool(b) => {
-                chunk.write_instruction(HIRInstruction::Bool);
-                chunk.write_bool(*b);
-            }
-            TyValueElement::Integer(i) => {
-                chunk.write_instruction(HIRInstruction::Integer);
-                chunk.write_int(*i);
-            }
-            TyValueElement::Float(f) => {
-                chunk.write_instruction(HIRInstruction::Float);
-                chunk.write_float(*f);
-            }
-            TyValueElement::String(s) => {
-                chunk.write_instruction(HIRInstruction::String);
-                chunk.write_string(s.clone());
-            }
-            TyValueElement::Custom(name) => {
-                chunk.write_instruction(HIRInstruction::Custom);
-                chunk.write_string(name.clone());
-            }
-            TyValueElement::Unit => {
-                chunk.write_instruction(HIRInstruction::Unit);
-            }
-        }
-        Ok(chunk)
-    }
-}
-
-///A value from input and it's type.
-///This can include primitive data such as literals, Unit values (aka, void or nothing), or custom types when parsing Constructors.
-///See [TyValueElement] for more information.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TyValue{
-    ty: Ty,
-    elem: TyValueElement
-}
-
-impl Unload for TyValue{
-    fn unload(&self) -> Result<Chunk, ()> {
-        let mut chunk = Chunk::new();
-        let tyval_chunk = match self.elem.unload(){
-            Ok(chunk) => chunk,
-            Err(_) => return Err(())
-        };
-        chunk.write_chunk(tyval_chunk);
-        Ok(chunk)
-    }
-}
-
 ///This trait provides an associative function for checking an IR during the `check` phase.
 ///This trait has a lifetime paramter ['a]. This lifetime parameter should be the same lifetime as a Typeck::start_checking. 
 ///The current Typeck instance will only exist as long as Typeck::start_checking is still a valid scope. All loading and checking will only occur while Typeck::start_checking is valid. 
@@ -189,71 +115,6 @@ trait Check<'a>{
     ///This function will only ever be called after `load` phase has successfully completed.
     ///param: typeck The typeck instance involved in the checking phase.
     fn check(&self, typeck: &'a Typeck) -> Result<(), ()>;
-}
-
-///A type, the meat of the sandwhich.
-///Ty represents a type which is used to represent a specific type. Type info is generated or inferred by context.
-///A Ty can be inferred or generated depending upon building blocks or sister componenets. Smart casting using the given context to ensure that while within a conditional block that checks for a type's instance, that we safely cast an object's type to the checked type.
-///```
-/// if(a is B){
-///     //Object 'a' was checked in the condition against the type B, so therefore we can safely smart cast 'a' to type B.
-///     a.doSomething()
-/// }
-///```
-#[derive(Debug, Clone, PartialEq)]
-pub struct Ty{
-    ///The name of the type. This is used for comparison.
-    pub ident: String,
-    ///The location in source code of the type. This can be one of the following:
-    /// * A type annotation
-    ///     * Function return type
-    ///     * Property/local type annotation
-    ///     * Class/Struct constructor
-    /// * Reference
-    ///     * Referencing an object
-    ///     * Calling a function
-    ///     * Metaprogramming features
-    pub pos: BiPos
-}
-
-impl Unload for Ty{
-    fn unload(&self) -> Result<Chunk, ()> {
-        let mut chunk = Chunk::new();
-        if self.pos != BiPos::default(){
-            chunk.write_pos(self.pos);
-        }
-        match self.ident.clone().as_str(){
-            "Int" => chunk.write_instruction(HIRInstruction::Integer),
-            "Float" => chunk.write_instruction(HIRInstruction::Float),
-            "Bool" => chunk.write_instruction(HIRInstruction::Bool),
-            "String" => chunk.write_instruction(HIRInstruction::String),
-            _ => chunk.write_instruction(HIRInstruction::Custom),
-        }
-        chunk.write_string(self.ident.clone());
-        Ok(chunk)
-    }
-}
-
-///A trait that provides a method called `get_ty` which is a convenience method for quickly getting an IR element's type info.
-pub trait GetTy{
-    fn get_ty(&self) -> &Ty;
-}
-
-
-///A part of a local or property whichi contains information about it's mutability. Properties use `var` while locals use `let mut`.
-#[derive(Debug, Clone)]
-pub struct Mutability{
-    pub mutable: bool,
-    pub pos: BiPos,
-}
-
-impl Unload for Mutability{
-    fn unload(&self) -> Result<Chunk, ()> {
-        let mut chunk = Chunk::new();
-        chunk.write_bool(self.mutable);
-        chunk.write_pos(self.pos);
-        Ok(chunk)
-    }
 }
 
 ///A single instance of a type checker, thus the shortened name *Typeck*. Each file is given its own Typeck. 

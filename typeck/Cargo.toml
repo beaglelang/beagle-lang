@@ -15,3 +15,8 @@ num-traits = "0.2"
 num-derive = "0.2"
 ir_traits = { path = "../ir_traits", version = "*" }
 ir_derive = { path = "../ir_derive", version = "*" }
+ident = { path = "../ident" }
+mutable = { path = "../mutable" }
+ty = { path = "../ty" }
+expr = { path = "../expr" }
+stmt = { path = "../stmt" }

@@ -10,12 +10,15 @@ use lexer::tokens::{
     TokenType,
 };
 
-use notices::NoticeLevel;
+use notices::{
+    NoticeLevel,
+    Notice
+};
 
 pub struct StatementParser;
 
 impl ParseRule for StatementParser{
-    fn parse(parser: &mut Parser) -> Result<(), ()>{
+    fn parse(parser: &mut Parser) -> Result<(), Notice>{
         let token = parser.current_token();
         match token.type_ {
             TokenType::KwMod => ModuleParser::parse(parser)?,
@@ -23,12 +26,14 @@ impl ParseRule for StatementParser{
             TokenType::KwVar => PropertyParser::parse(parser)?,
             TokenType::KwFun => FunctionParser::parse(parser)?,
             _ => {
-                parser.emit_notice(
-                    token.pos,
+                return Err(Notice::new(
+                    format!("Statement Parser"),
+                    format!("Unexpected token found: {}", token),
+                    Some(parser.name.clone()),
+                    Some(parser.current_token().pos),
                     NoticeLevel::Error,
-                    format!("Unexpected token found: {}", token).to_string(),
-                );
-                return Err(());
+                    vec![]
+                ));
             }
         }
         Ok(())
