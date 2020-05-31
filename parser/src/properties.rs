@@ -111,7 +111,7 @@ impl ParseRule for PropertyParser{
             chunk.write_instruction(HIRInstruction::Unknown);
         };
 
-        if let Err(_) = parser.check_consume(TokenType::Equal) {
+        if let Ok(false) = parser.check_consume(TokenType::Equal) {
             let found_token = parser.current_token();
             let data = match &found_token.data {
                 TokenData::Float(f) => f.to_string(),

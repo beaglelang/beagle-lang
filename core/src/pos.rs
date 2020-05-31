@@ -56,4 +56,17 @@ impl BiPos {
     pub fn next_col_end(&mut self) {
         self.end.1 += 1;
     }
+
+    pub fn range_to(&self, other: &BiPos) -> Self{
+        let start = Position(other.start.0 - self.start.0, other.start.1 - self.start.1);
+        let end = Position(other.end.0 - self.end.0, other.end.1 - self.end.1);
+        BiPos{
+            start,
+            end
+        }
+    }
+
+    pub fn col_range(&self) -> (usize, usize){
+        (self.start.1, self.end.1)
+    }
 }

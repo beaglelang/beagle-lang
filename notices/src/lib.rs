@@ -3,6 +3,24 @@ use core::{
     pos::{BiPos},
 };
 
+
+use annotate_snippets::{
+    display_list::{
+        DisplayList,
+    },
+    formatter::DisplayListFormatter,
+    snippet::{
+        AnnotationType,
+    },
+};
+
+mod annotation_builder;
+use annotation_builder::{
+    AnnotationBuilder,
+    SliceBuilder,
+    SnippetBuilder
+};
+
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone, Copy, Eq)]
 pub enum NoticeLevel {
@@ -10,6 +28,17 @@ pub enum NoticeLevel {
     Warning,
     Error,
     Halt,
+}
+
+impl NoticeLevel{
+    fn to_annotation_type(&self) -> AnnotationType{
+        match self{
+            NoticeLevel::Notice => AnnotationType::Info,
+            NoticeLevel::Warning => AnnotationType::Warning,
+            NoticeLevel::Error => AnnotationType::Error,
+            _ => return AnnotationType::Info,
+        }
+    }
 }
 
 
@@ -27,90 +56,59 @@ pub struct Notice {
     pub from: String,
     ///The actual raw message of the notice to be displayed
     pub msg: String,
-    ///Is this a notice about a source, if so, this will be Some(source)
-    pub source: Option<NoticeSource>,
+    pub file: Option<String>,
+    pub pos: Option<BiPos>,
     ///The level of the notice which determines how to print it.
     pub level: NoticeLevel,
     ///A child notice is a notice that is part of a series of notices. This is so that they can be preorderly printed together
     pub children: Vec<Notice>
 }
 
-impl Notice {
+impl<'a> Notice {
     pub fn new(from: String, msg: String, file: Option<String>, pos: Option<BiPos>, level: NoticeLevel, children: Vec<Notice>) -> Self{
         Self{
             from,
             msg,
-            source: if let Some(file) = file{
-                if let Some(pos) = pos{
-                    Some(NoticeSource{
-                        file,
-                        pos
-                    })
-                }else{
-                    None
-                }
-            }else{
-                None
-            },
+            file,
+            pos,
             level,
             children
         }
     }
 
-    pub fn report(self, source: Option<&str>) {
-        let (colour, prefix) = match self.level {
-            NoticeLevel::Notice => (ansi::Fg::Cyan, "[-]: "),
-            NoticeLevel::Warning => (ansi::Fg::Yellow, "[*]: "),
-            NoticeLevel::Error => (ansi::Fg::Red, "[!]: "),
-            NoticeLevel::Halt => return,
-        };
-
-        println!(
-            "{}{}{}{}: {}",
-            colour,
-            prefix,
-            self.from,
-            ansi::Fg::Reset,
-            self.msg
-        );
-
+    pub fn report(self, source: &str) {        
         
-        if self.source.is_none(){
-            for cause in self.children{
-                cause.report(source);
-            }
-            println!();
-            return;
+        let title = AnnotationBuilder::new(self.level.to_annotation_type()).label(self.msg.as_str()).build();
+        let mut snippet = SnippetBuilder::new().title(title);
+        let pos = if let Some(pos) = self.pos{
+            pos
+        }else{
+            BiPos::default()
+        };
+        let file = if let Some(file) = self.file{
+            file
+        }else{
+            String::new()
+        };
+        for child in self.children{
+            let child_pos = child.pos.unwrap();
+            let lines = source
+                .lines()
+                .skip(child_pos.start.0)
+                .take(7)
+                .collect::<Vec<&str>>()
+                .join("\n");
+            let msg = child.msg.as_str();
+            let mut slice_builder = SliceBuilder::new(false).origin(file.as_str()).line_start(child_pos.start.0).source(lines.to_owned());
+            slice_builder.source_annotation(child_pos.col_range(), msg, child.level.to_annotation_type());
+            let slice = slice_builder.build();
+            snippet.slice(slice);
         }
 
-        let _source = self.source.unwrap();
-        let file = _source.file;
-        let pos = _source.pos;
-    
-        println!("\tat [{}:({},{}) to ({},{})]\n", file, pos.start.0 + 1, pos.start.1 + 1, pos.end.0 + 1, pos.end.1 + 1);
-    
-        if let Some(src) = source {
-            if let Some((start_line, lines, squiggly)) = pos.locate_in_source(src) {
-                lines.iter().enumerate().for_each(|(i, line)| {
-                    println!(
-                        "\t{}{:4}{} | {}",
-                        colour,
-                        start_line + i + 1,
-                        ansi::Fg::Reset,
-                        line
-                    );
+        let dl = DisplayList::from(snippet.build());
+        let dlf = DisplayListFormatter::new(true, false);
 
-                    if i == pos.start.0 {
-                        println!("\t{}---- | {}{}", colour, squiggly, ansi::Fg::Reset);
-                    };
-                });
-                println!();
-            }
-        }
-        for cause in self.children{
-            cause.report(source);
-        }
-        println!();
+        println!("{}", dlf.format(&dl));
     }
 }
 

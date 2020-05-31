@@ -31,3 +31,5 @@ futures = { version = "*", features = ["thread-pool"] }
 
 ir = { path = "ir", version = "0.0.1" }
 frontend = { path = "frontend", version = "0.0.1" }
+annotate-snippets = "0.8.0"
+criterion = "0.3.2"

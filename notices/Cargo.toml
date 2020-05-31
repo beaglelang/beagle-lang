@@ -9,3 +9,6 @@ edition = "2018"
 [dependencies]
 core = { path = "../core", version = "0.0.1" }
 ansi_term = "*"
+annotate-snippets = { version = "0.6.1", features = ["color"] }
+criterion = "0.3.2"
+unicode-segmentation = "1.6.0"

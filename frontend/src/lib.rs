@@ -75,7 +75,7 @@ impl Driver {
                     Ok(Some(n)) => {
                         match n.level {
                             NoticeLevel::Halt => break,
-                            _ => n.report(Some(instr.clone().as_str())),
+                            _ => n.report(instr.clone().as_str()),
                         };
                     },
                     Ok(_) | Err(_) => break,

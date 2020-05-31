@@ -4,6 +4,6 @@ fun testFunc(test: String) {
     let time = 1100 - 20 + 10
 }
 
-fun anotherTest(test: Int, yo: Bool): String{
+fu anotherTest(test: Int, yo: Bool): String{
     let name = "alex"
 }
