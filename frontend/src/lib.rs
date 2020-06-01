@@ -8,24 +8,18 @@ use lexer::tokens;
 
 use std::sync::mpsc::{
     channel,
+    Sender,
     Receiver
 };
 
-use notices::{Diagnostic, DiagnositcBuilder, DiagnosticLevel};
+use notices::{Diagnostic, DiagnosticLevel};
 use typeck::{
     TypeckManager
 };
 
-enum ModuleMessage{
-    SourceRequest,
-    SourceResponse(BiPos),
-}
+use module_messages::ModuleMessage;
 
-struct ModuleComms{
-    module_name: String,
-    send: SendChannel<ModuleMessage>,
-    recv: ReceiveChannel<ModuleMessage>
-}
+use std::sync::{ Arc, Mutex };
 
 #[allow(dead_code)]
 pub struct Driver{
@@ -34,19 +28,21 @@ pub struct Driver{
     typeck_manager: typeck::TypeckManager,
     memmy_manager: memmy::MemmyManager,
     notice_rx: Receiver<Option<Diagnostic>>,
-    master_tx: Sender<ModuleMessage>,
-    master_rx: Sender<ModuleMessage>,
-    module_comm_channels: Vec<ModuleComms>, 
+    master_in_tx: Sender<ModuleMessage>,
+    master_in_rx: Receiver<ModuleMessage>,
+    master_out_tx: Sender<ModuleMessage>,
+    master_out_rx: Arc<Mutex<Receiver<ModuleMessage>>>
 }
 
 impl Driver {
     pub fn new() -> Driver{
         let (_token_tx, _token_rx) = channel::<tokens::LexerToken>();
         let (_hir_tx, _hir_rx) = channel::<Option<Chunk>>();
-        let (notice_tx, notice_rx) = channel::<Option<Notice>>();
+        let (notice_tx, notice_rx) = channel::<Option<Diagnostic>>();
         let (_typeck_tx, _typeck_rx) = channel::<Option<Chunk>>();
         let (_mir_tx, _mir_rx) = channel::<Option<Chunk>>();
-        let (master_tx, master_rx) = channel::<ModuleMessage>();
+        let (master_in_tx, master_in_rx) = channel::<ModuleMessage>();
+        let (master_out_tx, master_out_rx) = channel::<ModuleMessage>();
 
         let lexer_manager = lexer::LexerManager::new(notice_tx.clone());
         let parser_manager = parser::ParseManager::new(notice_tx.clone());
@@ -59,8 +55,10 @@ impl Driver {
             typeck_manager,
             memmy_manager,
             notice_rx,
-            master_tx, master_rx,
-            module_comm_channels: HashMap::<String, Channel>::new()
+            master_in_tx,
+            master_in_rx,
+            master_out_tx,
+            master_out_rx: Arc::new(Mutex::new(master_out_rx))
         }
     }
 
@@ -79,24 +77,39 @@ impl Driver {
         #[allow(unused_mut)]
         let mut module = ir::Module::new(name.clone().to_string());
 
-        self.lexer_manager.enqueue_module(name.clone().to_string(), instr.clone(), token_tx);
-        self.parser_manager.enqueue_module(name.clone().to_string(), token_rx, hir_tx);
-        self.typeck_manager.enqueue_module(name.clone().to_string(), hir_rx, typeck_tx);
-        self.memmy_manager.enqueue_module(name.clone().to_string(), typeck_rx, mir_tx);
+        self.lexer_manager.enqueue_module(name.clone().to_string(), instr.clone(), token_tx, self.master_in_tx.clone(), self.master_out_rx.clone());
+        self.parser_manager.enqueue_module(name.clone().to_string(), token_rx, hir_tx, self.master_in_tx.clone(), self.master_out_rx.clone());
+        self.typeck_manager.enqueue_module(name.clone().to_string(), hir_rx, typeck_tx, self.master_in_tx.clone(), self.master_out_rx.clone());
+        self.memmy_manager.enqueue_module(name.clone().to_string(), typeck_rx, mir_tx, self.master_in_tx.clone(), self.master_out_rx.clone());
 
         let notice_task = async {
             loop {
                 match self.notice_rx.recv() {
                     Ok(Some(n)) => {
                         match n.level {
-                            NoticeLevel::Halt => break,
+                            DiagnosticLevel::Halt => break,
                             _ => {
-                                
+                                n.display()
                             },
                         };
                     },
                     Ok(_) | Err(_) => break,
                 };
+            }
+        };
+
+        let master_channel_listener = async{
+            while let Ok(message) = self.master_in_rx.recv(){
+                match message{
+                    ModuleMessage::SourceRequest(pos) => {
+                        let source = instr.clone().split_off(pos.offset.0).split_off(pos.offset.1);
+                        self.master_out_tx.send(ModuleMessage::SourceResponse(source)).unwrap();
+                    }
+                    _ => {
+                        println!("Line 110 in frontend module was triggered somehow, this should not have happened.");
+                        break;
+                    }
+                }
             }
         };
 
@@ -112,7 +125,7 @@ impl Driver {
         //     }
         // };
 
-        futures::join!(ir_task, notice_task);
+        futures::join!(notice_task, master_channel_listener, ir_task);
         
         Ok(Box::new(module))
     }

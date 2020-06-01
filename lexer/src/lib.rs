@@ -43,7 +43,7 @@ impl LexerManager{
         }
     }
 
-    pub fn enqueue_module(&self, module_name: String, input: String, parser_tx: Sender<LexerToken>, master_tx: Sender<ModuleMessage>, master_rx: Receiver<ModuleMessage>){
+    pub fn enqueue_module(&self, module_name: String, input: String, parser_tx: Sender<LexerToken>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
         let notice_tx_clone = self.notice_tx.clone();
         let parser_tx_clone = parser_tx.clone();
         let input_clone = input.clone();
@@ -66,7 +66,7 @@ pub struct Lexer {
 
     pub token_sender: Arc<Mutex<Sender<tokens::LexerToken>>>,
     master_tx: Sender<ModuleMessage>,
-    master_rx: Receiver<ModuleMessage>,
+    master_rx: Arc<Mutex<Receiver<ModuleMessage>>>,
 }
 
 impl<'a, 'b> Lexer{
@@ -75,7 +75,7 @@ impl<'a, 'b> Lexer{
         input: String,
         token_tx: Arc<Mutex<Sender<LexerToken>>>,
         master_tx: Sender<ModuleMessage>,
-        master_rx: Receiver<ModuleMessage>,
+        master_rx: Arc<Mutex<Receiver<ModuleMessage>>>,
     ) -> Box<Lexer> {
         let input_str = input.clone();
         let lexer = Box::new(Lexer {
@@ -324,7 +324,16 @@ impl<'a, 'b> Lexer{
                                         .message(format!("The master channel was closed??"))
                                         .build());
                                 }
-                                let source_snip = match self.master_rx.recv(){
+                                let master_rx_lock = match self.master_rx.lock(){
+                                    Ok(lock ) => lock,
+                                    Err(err) => {
+                                        return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), self.current_pos.start.0)
+                                            .level(DiagnosticLevel::Error)
+                                            .message(err.to_string())
+                                            .build());
+                                    }
+                                };
+                                let source_snip = match master_rx_lock.recv(){
                                     Ok(ModuleMessage::SourceResponse(source_snip)) => source_snip,
                                     Ok(thing) => return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), self.current_pos.start.0)
                                     .level(DiagnosticLevel::Error)

@@ -37,11 +37,11 @@ impl DiagnosticLevel{
 
 
 pub struct Diagnostic{
-    msg: String,
-    level: DiagnosticLevel,
-    pos: BiPos,
-    notes: Vec<String>,
-    sources: Vec<DiagnosticSource>
+    pub msg: String,
+    pub level: DiagnosticLevel,
+    pub pos: BiPos,
+    pub notes: Vec<String>,
+    pub sources: Vec<DiagnosticSource>
 }
 
 impl Diagnostic{

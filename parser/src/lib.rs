@@ -60,7 +60,7 @@ impl ParseManager{
         }
     }
 
-    pub fn enqueue_module(&self, module_name: String, token_rx: Receiver<LexerToken>, hir_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Receiver<ModuleMessage>){
+    pub fn enqueue_module(&self, module_name: String, token_rx: Receiver<LexerToken>, hir_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
         let notice_tx_clone = self.notice_tx.lock().unwrap().clone();
         self.thread_pool.spawn_ok(async move{
             let _ = Parser::parse(module_name.clone(), hir_tx, token_rx, notice_tx_clone.clone(), master_tx, master_rx);
@@ -77,7 +77,7 @@ pub struct Parser {
 
     active_tokens: [LexerToken; 3],
     master_tx: Sender<ModuleMessage>,
-    master_rx: Receiver<ModuleMessage>,
+    master_rx: Arc<Mutex<Receiver<ModuleMessage>>>,
 }
 
 impl Parser {
@@ -87,7 +87,7 @@ impl Parser {
         token_rx: Receiver<LexerToken>,
         notice_tx: Sender<Option<Diagnostic>>,
         master_tx: Sender<ModuleMessage>,
-        master_rx: Receiver<ModuleMessage>,
+        master_rx: Arc<Mutex<Receiver<ModuleMessage>>>,
     ) -> Self {
         Parser {
             name,
@@ -113,21 +113,26 @@ impl Parser {
                 .build();
                 return Err(diag);
         }
-        return match self.master_rx.recv(){
+        let master_rx_lock = match self.master_rx.lock(){
+            Ok(lock ) => lock,
+            Err(err) => {
+                return Err(DiagnosticSourceBuilder::new(self.name.clone(), self.current_token().pos.start.0)
+                    .level(DiagnosticLevel::Error)
+                    .message(err.to_string())
+                    .build());
+            }
+        };
+        return match master_rx_lock.recv(){
             Ok(ModuleMessage::SourceResponse(source_snip)) => Ok(source_snip),
-            Ok(thing) => {
-                let diag = DiagnosticSourceBuilder::new(self.name.clone(), 0)
-                .level(DiagnosticLevel::Error)
-                .message(format!("Not sure what we got but we shouldn't have: {:?}", thing))
-                .build();
-                return Err(diag)
-            },
+            Ok(thing) => Err(DiagnosticSourceBuilder::new(self.name.clone(), self.current_token().pos.start.0)
+            .level(DiagnosticLevel::Error)
+            .message(format!("Not sure what we got but we shouldn't have: {:?}", thing))
+            .build()),
             Err(_) => {
-                let diag = DiagnosticSourceBuilder::new(self.name.clone(), 0)
-                .level(DiagnosticLevel::Error)
-                .message(format!("The master channel was closed??"))
-                .build();
-                return Err(diag);
+                Err(DiagnosticSourceBuilder::new(self.name.clone(), self.current_token().pos.start.0)
+                    .level(DiagnosticLevel::Error)
+                    .message(format!("The master channel was closed??"))
+                    .build())
             }
         };
     }
@@ -249,7 +254,7 @@ impl Parser {
         token_rx: Receiver<LexerToken>,
         notice_tx: Sender<Option<Diagnostic>>,
         master_tx: Sender<ModuleMessage>,
-        master_rx: Receiver<ModuleMessage>,
+        master_rx: Arc<Mutex<Receiver<ModuleMessage>>>,
     ) -> Result<(), ()> {
         let mut parser = Parser::new(name, ir_tx, token_rx, notice_tx, master_tx, master_rx);
         if let Err(diag) = parser.advance(){

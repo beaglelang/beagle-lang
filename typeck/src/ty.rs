@@ -20,16 +20,16 @@ use ty::{
 };
 
 use notices::{
-    NoticeLevel,
-    Notice,
+    DiagnosticSourceBuilder,
+    DiagnosticLevel,
 };
 
 pub trait Inference{
-    fn infer_type(&self, typeck: &Typeck) -> Result<(),Notice>;
+    fn infer_type(&self, typeck: &Typeck) -> Result<(),()>;
 }
 
 impl Unload for Ty{
-    fn unload(&self) -> Result<Chunk, Notice> {
+    fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
         if self.pos != BiPos::default(){
             chunk.write_pos(self.pos);
@@ -49,18 +49,16 @@ impl Unload for Ty{
 impl Load for Ty{
     type Output = Ty;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, ()> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                return Err(Notice::new(
-                    format!("Type Loader"),
-                    msg,
-                    None,
-                    None,
-                    NoticeLevel::Error,
-                    vec![]
-                ))
+                let diag_source = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                    .level(DiagnosticLevel::Error)
+                    .message(msg)
+                    .build();
+                typeck.emit_diagnostic(&[], &[diag_source]);
+                return Err(())
             }
         };
         let ins = chunk.read_instruction() as Option<HIRInstruction>;
@@ -73,14 +71,20 @@ impl Load for Ty{
                 }
             }
             None => {
-                return Err(Notice::new(
-                    format!("Type Loader"),
-                    format!("Expected a param type annotation but instead got none. This is a bug in the compiler."),
-                    Some(typeck.module_name.clone()),
-                    Some(pos),
-                    NoticeLevel::Error,
-                    vec![]
-                ))
+                let source = match typeck.request_source_snippet(pos){
+                    Ok(source) => source,
+                    Err(msg) => {
+                        typeck.emit_diagnostic(&[], &[msg]);
+                        return Err(())
+                    }
+                };
+                let diag_source = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                    .level(DiagnosticLevel::Error)
+                    .message(format!("Expected a param type annotation but instead got none. This is a bug in the compiler."))
+                    .source(source)
+                    .build();
+                typeck.emit_diagnostic(&[], &[diag_source]);
+                return Err(())
             }
         };
         Ok(Some(Ty{
@@ -96,7 +100,7 @@ pub trait GetTy{
 }
 
 impl Unload for TyValueElement{
-    fn unload(&self) -> Result<Chunk, Notice> {
+    fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
         match self{
             TyValueElement::Bool(b) => {
@@ -130,7 +134,7 @@ impl Unload for TyValueElement{
 
 
 impl Unload for TyValue{
-    fn unload(&self) -> Result<Chunk, Notice> {
+    fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
         let tyval_chunk = match self.elem.unload(){
             Ok(chunk) => chunk,

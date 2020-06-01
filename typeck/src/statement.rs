@@ -18,14 +18,14 @@ use super::{
 };
 use ir_traits::ReadInstruction;
 use notices::{ 
-    NoticeLevel,
-    Notice,
+    DiagnosticLevel,
+    DiagnosticSourceBuilder,
 };
 
 impl Load for Statement{
     type Output = Statement;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, ()> {
         match chunk.read_instruction(){
             Some(HIRInstruction::Property) => match Property::load(chunk, typeck){
                 Ok(Some(property)) => {
@@ -60,25 +60,25 @@ impl Load for Statement{
             _ => {
                 chunk.jump_to(0).unwrap();
                 let message = if chunk.code.is_empty(){
-                    format!("Malformed bytecode chunk: chunk is empty, which is a bug in the compiler.")
+                    format!("Malformed bytecode chunk: chunk is empty.")
                 }else{
-                    format!("Malformed bytecode chunk: could not read instruction from chunk; no further information provided. This should only happening during development and should never be seen by the user. If this is the case contact the author with this information: \n\tTypeck#load_statement failed to read instruction from chunk.\n\tFurther information: {}", chunk)
+                    format!("Malformed bytecode chunk: could not read instruction from chunk; no further information provided. ")
                 };
-                return Err(Notice::new(
-                    format!("Statement Loader"),
-                    message,
-                    None,
-                    None,
-                    NoticeLevel::Error,
-                    vec![]
-                ))
+                let diag_source = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                    .level(DiagnosticLevel::Error)
+                    .message(message)
+                    .build();
+                typeck.emit_diagnostic(&[
+                    format!("This should only happening during development and should never be seen by the user. If this is the case contact the author with this information: \n\tTypeck#load_statement failed to read instruction from chunk.\n\tFurther information: {}", chunk),
+                ], &[diag_source]);
+                return Err(())
             }
         }
     }
 }
 
 impl<'a> super::Check<'a> for Statement{
-    fn check(&self, typeck: &'a Typeck) -> Result<(), Notice> {
+    fn check(&self, typeck: &'a Typeck) -> Result<(), ()> {
         match &self.kind{
             StatementKind::Local(local) => local.check(typeck),
             StatementKind::Fun(fun) => fun.check(typeck),
@@ -88,7 +88,7 @@ impl<'a> super::Check<'a> for Statement{
 }
 
 impl Unload for Statement{
-    fn unload(&self) -> Result<Chunk, Notice> {
+    fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
         match &self.kind{
             StatementKind::Fun(fun) => match fun.unload(){

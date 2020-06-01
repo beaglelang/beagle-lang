@@ -25,12 +25,12 @@ use super::{
 use ir::hir::HIRInstruction;
 use ir_traits::{ReadInstruction, WriteInstruction};
 use notices::{
-    NoticeLevel,
-    Notice,
+    DiagnosticSourceBuilder,
+    DiagnosticLevel,
 };
 
 impl Unload for FunParam{
-    fn unload(&self) -> Result<Chunk, Notice> {
+    fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
         chunk.write_instruction(HIRInstruction::FnParam);
         chunk.write_pos(self.pos);
@@ -47,7 +47,7 @@ impl Unload for FunParam{
 }
 
 impl<'a> Check<'a> for Fun{
-    fn check(&self, typeck: &'a Typeck) -> Result<(), Notice> {
+    fn check(&self, typeck: &'a Typeck) -> Result<(), ()> {
         for statement in self.body.iter(){
             if let Err(notice) = statement.check(typeck){
                 return Err(notice)
@@ -60,18 +60,16 @@ impl<'a> Check<'a> for Fun{
 impl Load for Fun{
     type Output = Fun;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, ()> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                return Err(Notice::new(
-                    format!("Function Loader"),
-                    msg,
-                    None,
-                    None,
-                    NoticeLevel::Error,
-                    vec![]
-                ))
+                let diag_source = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                    .level(DiagnosticLevel::Error)
+                    .message(msg)
+                    .build();
+                typeck.emit_diagnostic(&[], &[diag_source]);
+                return Err(())
             }
         };
         let ident = match Identifier::load(chunk, typeck){
@@ -89,24 +87,28 @@ impl Load for Fun{
                 let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
                     Err(msg) => {
-                        return Err(Notice::new(
-                            format!("Function Loader"),
-                            msg,
-                            None,
-                            None,
-                            NoticeLevel::Error,
-                            vec![]
-                        ))
+                        let diag_source = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                            .message(msg)
+                            .level(DiagnosticLevel::Error)
+                            .build();
+                        typeck.emit_diagnostic(&[], &[diag_source]);
+                        return Err(())
                     }
                 };
-                return Err(Notice::new(
-                    format!("Function Loader"),
-                    format!("Expected an fn param instruction but instead got {:?}; this is a bug in the compiler.", ins),
-                    Some(typeck.module_name.clone()),
-                    Some(pos),
-                    NoticeLevel::Error,
-                    vec![]
-                ))
+                let source = match typeck.request_source_snippet(pos){
+                    Ok(source) => source,
+                    Err(diag) => {
+                        typeck.emit_diagnostic(&[], &[diag]);
+                        return Err(())
+                    }
+                };
+                let diag_source = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                            .message(format!("Expected an fn param instruction but instead got {:?}", ins))
+                            .level(DiagnosticLevel::Error)
+                            .source(source)
+                            .build();
+                typeck.emit_diagnostic(&[format!("This is a bug in the compiler.")], &[diag_source]);
+                return Err(())
             }
 
             let param_ident = match Identifier::load(chunk, typeck){
@@ -136,66 +138,60 @@ impl Load for Fun{
                 chunk
             }
             Ok(None) => {
-                let notice = Notice::new(
-                    format!("Function Loader"),
-                    format!("The previous error should only have occurred during development. If you are a user then please notify the author."),
-                    None,
-                    None,
-                    NoticeLevel::Error,
-                    vec![]
+                let report = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                    .message(format!("Failed to get chunk from chunk channel."))
+                    .level(DiagnosticLevel::Error)
+                    .build();
+                typeck.emit_diagnostic(&[
+                    format!("The previous error should only have occurred during development. If you are a user then please notify the author.")
+                    ], 
+                    &[report]
                 );
-                return Err(Notice::new(
-                    format!("Function Loader"),
-                    format!("Failed to get chunk from chunk channel."),
-                    Some(typeck.module_name.clone()),
-                    Some(pos),
-                    NoticeLevel::Error,
-                    vec![notice]
-                ))
+                return Err(())
             }
             Err(_) =>{
-                let notice = Notice::new(
-                    format!("Function Loader"),
-                    format!("The previous error should only have occurred during development. If you are a user then please notify the author."),
-                    None,
-                    None,
-                    NoticeLevel::Error,
-                    vec![]
+                let report = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                    .message(format!("Failed to get chunk from chunk channel."))
+                    .level(DiagnosticLevel::Error)
+                    .build();
+                typeck.emit_diagnostic(&[
+                    format!("The previous error should only have occurred during development. If you are a user then please notify the author.")
+                    ], 
+                    &[report]
                 );
-                return Err(Notice::new(
-                    format!("Function Loader"),
-                    format!("Failed to get chunk from chunk channel."),
-                    Some(typeck.module_name.clone()),
-                    Some(pos),
-                    NoticeLevel::Error,
-                    vec![notice]
-                ))
+                return Err(())
             }
         };
-        let mut block: Vec<Statement> = if let Some(HIRInstruction::Block) = block_chunk.read_instruction(){
+        let block = block_chunk.read_instruction();
+        let mut block: Vec<Statement> = if let Some(HIRInstruction::Block) = block{
             vec![]
         }else{
             let pos = match chunk.read_pos(){
                 Ok(pos) => pos,
                 Err(msg) => {
-                    return Err(Notice::new(
-                        format!("Function Loader"),
-                        msg,
-                        None,
-                        None,
-                        NoticeLevel::Error,
-                        vec![]
-                    ))
+                    let diag_source = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                        .message(msg)
+                        .level(DiagnosticLevel::Error)
+                        .build();
+                    typeck.emit_diagnostic(&[], &[diag_source]);
+                    return Err(())
                 }
             };
-            return Err(Notice::new(
-                format!("Function Loader"),
-                format!("Expected a block chunk denotig the start of a function body."),
-                Some(typeck.module_name.clone()),
-                Some(pos),
-                NoticeLevel::Error,
-                vec![]
-            ))
+            let source = match typeck.request_source_snippet(pos){
+                Ok(source) => source,
+                Err(diag) => {
+                    typeck.emit_diagnostic(&[], &[diag]);
+                    return Err(())
+                }
+            };
+            let report = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                    .message(format!("Expected a function body but instead got {:?}.", block))
+                    .level(DiagnosticLevel::Error)
+                    .source(source)
+                    .range(pos.col_range())
+                    .build();
+            typeck.emit_diagnostic(&[], &[report]);
+            return Err(())
         };
         loop{
             let next_chunk = typeck.chunk_rx.recv().unwrap().unwrap();
@@ -223,7 +219,7 @@ impl Load for Fun{
 }
 
 impl Unload for Fun{
-    fn unload(&self) -> Result<Chunk, Notice> {
+    fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
         chunk.write_instruction(HIRInstruction::Fn);
         chunk.write_pos(self.pos);

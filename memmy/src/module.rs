@@ -11,8 +11,6 @@ use ir::{ Chunk };
 
 use notices::{
     DiagnosticSource,
-    DiagnosticSourceBuilder,
-    DiagnosticLevel
 };
 
 #[allow(dead_code)]

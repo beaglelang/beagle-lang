@@ -2,15 +2,26 @@ use ir::{
     Chunk,
 };
 
-use notices::*;
 use std::sync::{
     mpsc::{
-        Sender, Receiver
+        Sender, Receiver, 
     },
+    Arc, Mutex
 };
 
 use futures::executor::ThreadPool;
 
+use notices::{
+    Diagnostic,
+    DiagnosticBuilder,
+    DiagnosticSource,
+    DiagnosticSourceBuilder,
+    DiagnosticLevel
+};
+
+use module_messages::ModuleMessage;
+
+use core::pos::BiPos;
 
 mod expressions;
 
@@ -31,11 +42,11 @@ pub trait Load{
     ///The type being loaded/returned upon success by [load].
     type Output;
     ///Convert the given [chunk] to an IR for the given [typeck].
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice>;
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, ()>;
 }
 
 pub trait Unload{
-    fn unload(&self) -> Result<Chunk, Notice>;
+    fn unload(&self) -> Result<Chunk, ()>;
 }
 
 ///A global manager for all [typeck]s. All typeck's are added to a threadpool upon a call to [enqueueModule].
@@ -73,12 +84,12 @@ pub struct TypeckManager{
     ///The threadpool of typeck instances. This is populated by [enqueueModule].
     thread_pool: ThreadPool,
     ///A global copy of a notice sender channel that all typeck's are given clones of.
-    notice_tx: Sender<Option<Notice>>,
+    notice_tx: Sender<Option<Diagnostic>>,
 }
 
 impl TypeckManager{
     ///Create a new typeck manager with the given notice sender channel.
-    pub fn new(notice_tx: Sender<Option<Notice>>) -> Self{
+    pub fn new(notice_tx: Sender<Option<Diagnostic>>) -> Self{
         TypeckManager{
             thread_pool: ThreadPool::new().unwrap(),
             notice_tx,
@@ -87,14 +98,11 @@ impl TypeckManager{
 
     ///Enqueue a module for being type checked in parallel to other stages. See [Driver] for more info.
     ///This will spawn a new task/thread in thread_pool which executes [Typeck::start_checking].
-    pub fn enqueue_module(&self, module_name: String, hir_rx: Receiver<Option<Chunk>>, typeck_tx: Sender<Option<Chunk>>){
+    pub fn enqueue_module(&self, module_name: String, hir_rx: Receiver<Option<Chunk>>, typeck_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
         let notice_tx_clone = self.notice_tx.clone();
         let module_name_clone = module_name.clone();
         self.thread_pool.spawn_ok(async move{
-            let typeck = Typeck::start_checking(module_name_clone.clone(), hir_rx, typeck_tx);
-            if let Err(notice) = typeck{
-                notice_tx_clone.clone().send(Some(notice)).unwrap();
-            };
+            let _ = Typeck::start_checking(module_name_clone.clone(), hir_rx, typeck_tx, master_tx, master_rx, notice_tx_clone.clone());
         });
     }
 }
@@ -106,7 +114,7 @@ trait Check<'a>{
     ///Check the current IR and return `Err(())` if an error notice has been emitted to the typeck.
     ///This function will only ever be called after `load` phase has successfully completed.
     ///param: typeck The typeck instance involved in the checking phase.
-    fn check(&self, typeck: &'a Typeck) -> Result<(), Notice>;
+    fn check(&self, typeck: &'a Typeck) -> Result<(), ()>;
 }
 
 ///A single instance of a type checker, thus the shortened name *Typeck*. Each file is given its own Typeck. 
@@ -128,13 +136,62 @@ pub struct Typeck{
     typeck_tx: Sender<Option<Chunk>>,
     ///The main module IR instance which represents the entire file as a module. This is where child elements are added.
     module_ir: modules::Module,
+
+    diagnostic_tx: Sender<Option<Diagnostic>>,
+
+    master_tx: Sender<ModuleMessage>,
+    master_rx: Arc<Mutex<Receiver<ModuleMessage>>>
 }
 
 impl<'a> Typeck{
+    pub fn request_source_snippet(&self, pos: BiPos) -> Result<String, DiagnosticSource>{
+        if let Err(_) = self.master_tx.send(ModuleMessage::SourceRequest(pos)){
+            let diag = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                .level(DiagnosticLevel::Error)
+                .message(format!("The master channel was closed??"))
+                .build();
+                return Err(diag);
+        }
+        let master_rx_lock = match self.master_rx.lock(){
+            Ok(lock ) => lock,
+            Err(err) => {
+                return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                    .level(DiagnosticLevel::Error)
+                    .message(err.to_string())
+                    .build());
+            }
+        };
+        return match master_rx_lock.recv(){
+            Ok(ModuleMessage::SourceResponse(source_snip)) => Ok(source_snip),
+            Ok(thing) => {
+                let diag = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                .level(DiagnosticLevel::Error)
+                .message(format!("Not sure what we got but we shouldn't have: {:?}", thing))
+                .build();
+                return Err(diag)
+            },
+            Err(_) => {
+                let diag = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                .level(DiagnosticLevel::Error)
+                .message(format!("The master channel was closed??"))
+                .build();
+                return Err(diag);
+            }
+        };
+    }
+
+    pub fn emit_diagnostic(&self, notes: &[String], diag_sources: &[DiagnosticSource]){
+        let diagnostic = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                    .message(format!("An error occurred during type checking."))
+                    .add_sources(diag_sources)
+                    .add_notes(notes)
+                    .build();
+        self.diagnostic_tx.send(Some(diagnostic)).unwrap();
+    }
     
     ///This is the start of the load phase. This begins to take in HIR chunks and calls `Statement::load` with that chunk and the current typeck.
     //The produced Statement object is added to [module_ir].
-    fn load(&mut self) -> Result<(),Notice>{
+    fn load(&mut self) -> Result<(),()>{
         loop{
             let chunk = if let Ok(Some(chunk)) = self.chunk_rx.recv(){
                 chunk
@@ -150,7 +207,7 @@ impl<'a> Typeck{
         }
     }
 
-    fn unload(&self) -> Result<(),Notice>{
+    fn unload(&self) -> Result<(),()>{
         for statement in self.module_ir.statements.iter(){
             let ch = match statement.unload(){
                 Ok(chunk) => chunk,
@@ -162,7 +219,14 @@ impl<'a> Typeck{
     }
 
     ///This is the start of the entire typeck operation, which creates a new typeck object and procceeds to call it's load phase followed by its check phase.
-    pub fn start_checking(module_name: String, ir_rx: Receiver<Option<Chunk>>, typeck_tx: Sender<Option<Chunk>>) -> Result<(), Notice>{
+    pub fn start_checking(
+                        module_name: String, 
+                        ir_rx: Receiver<Option<Chunk>>, 
+                        typeck_tx: Sender<Option<Chunk>>, 
+                        master_tx: Sender<ModuleMessage>, 
+                        master_rx: Arc<Mutex<Receiver<ModuleMessage>>>,
+                        diagnostic_tx: Sender<Option<Diagnostic>>
+                    ) -> Result<(), ()>{
         let mut typeck = Self{
             module_name: module_name.clone(),
             typeck_tx,
@@ -171,39 +235,21 @@ impl<'a> Typeck{
                 ident: module_name.clone(),
                 statements: vec![]
             },
+            master_tx,
+            master_rx,
+            diagnostic_tx
         };
 
-        if let Err(notice) = typeck.load(){
-            return Err(Notice::new(
-                format!("Typeck"),
-                "An error occurred during type checking".to_owned(),
-                None,
-                None,
-                NoticeLevel::Error,
-                vec![notice]
-            ))
+        if let Err(()) = typeck.load(){
+            return Err(())
         }
         
-        if let Err(notice) = typeck.module_ir.check(&typeck){
-            return Err(Notice::new(
-                format!("Typeck"),
-                "An error occurred during type checking".to_owned(),
-                None,
-                None,
-                NoticeLevel::Error,
-                vec![notice]
-            ))
+        if let Err(()) = typeck.module_ir.check(&typeck){
+            return Err(())
         }
 
-        if let Err(notice) = typeck.unload(){
-            return Err(Notice::new(
-                format!("Typeck"),
-                "An error occurred during type checking".to_owned(),
-                None,
-                None,
-                NoticeLevel::Error,
-                vec![notice]
-            ))
+        if let Err(()) = typeck.unload(){
+            return Err(())
         }
 
         typeck.typeck_tx.send(None).unwrap();

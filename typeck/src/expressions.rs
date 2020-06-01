@@ -20,8 +20,8 @@ use ir_traits::{
 };
 
 use notices::{
-    NoticeLevel,
-    Notice,
+    DiagnosticLevel,
+    DiagnosticSourceBuilder,
 };
 
 
@@ -34,7 +34,7 @@ impl GetTy for Expr{
 
 
 impl Unload for Expr{
-    fn unload(&self) -> Result<Chunk, Notice> {
+    fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
         chunk.write_pos(self.pos);
         match self.kind.unload(){
@@ -47,7 +47,7 @@ impl Unload for Expr{
 }
 
 impl Unload for ExprElement{
-    fn unload(&self) -> Result<Chunk, Notice> {
+    fn unload(&self) -> Result<Chunk, ()> {
         match &self{
             ExprElement::Grouped(expr) => expr.unload(),
             ExprElement::Value(ty_val) => ty_val.unload(),
@@ -91,7 +91,7 @@ impl Unload for ExprElement{
 
 
 impl Unload for OpKind{
-    fn unload(&self) -> Result<Chunk, Notice> {
+    fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
         match self{
             OpKind::Add => chunk.write_instruction(HIRInstruction::Add),
@@ -119,19 +119,17 @@ impl GetTy for ExprElement{
 impl Load for Expr{
     type Output = Expr;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, ()> {
         let ins: Option<HIRInstruction> = chunk.read_instruction();
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                return Err(Notice::new(
-                    format!("Expression Checker"),
-                    msg,
-                    None,
-                    None,
-                    NoticeLevel::Error,
-                    vec![]
-                ))
+                let diag_source = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                    .message(msg)
+                    .level(DiagnosticLevel::Error)
+                    .build();
+                typeck.emit_diagnostic(&[], &[diag_source]);
+                return Err(())
             }
         };
         match &ins {
@@ -301,14 +299,21 @@ impl Load for Expr{
             }
             
             _ => {
-                return Err(Notice::new(
-                    format!("Expression Checker"),
-                    format!("Expected an expression but instead got instruction {:?}", ins.unwrap()),
-                    Some(typeck.module_name.clone()),
-                    Some(pos),
-                    NoticeLevel::Error,
-                    vec![]
-                ))
+                let source = match typeck.request_source_snippet(pos){
+                    Ok(source) => source,
+                    Err(diag) => {
+                        typeck.emit_diagnostic(&[], &[diag]);
+                        return Err(())
+                    }
+                };
+                let report = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                        .message(format!("Expected an expression but instead got instruction {:?}", ins.unwrap()))
+                        .level(DiagnosticLevel::Error)
+                        .source(source)
+                        .range(pos.col_range())
+                        .build();
+                typeck.emit_diagnostic(&[], &[report]);
+                return Err(())
             }
         }
     }

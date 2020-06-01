@@ -23,6 +23,7 @@ impl Default for Position {
 pub struct BiPos {
     pub start: Position,
     pub end: Position,
+    pub offset: Position,
 }
 
 impl std::fmt::Display for BiPos {
@@ -36,6 +37,7 @@ impl Default for BiPos {
         Self {
             start: Position::default(),
             end: Position::default(),
+            offset: Position::default()
         }
     }
 }
@@ -62,7 +64,8 @@ impl BiPos {
         let end = Position(other.end.0 - self.end.0, other.end.1 - self.end.1);
         BiPos{
             start,
-            end
+            end,
+            offset: Position(self.offset.0, other.offset.1)
         }
     }
 

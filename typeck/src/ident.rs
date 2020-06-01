@@ -8,12 +8,12 @@ use ir::Chunk;
 
 use ident::Identifier;
 use notices::{
-    NoticeLevel,
-    Notice,
+    DiagnosticSourceBuilder,
+    DiagnosticLevel,
 };
 
 impl Unload for Identifier{
-    fn unload(&self) -> Result<Chunk, Notice> {
+    fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
         chunk.write_pos(self.pos);
         chunk.write_string(self.ident.clone());
@@ -23,18 +23,16 @@ impl Unload for Identifier{
 
 impl Load for Identifier{
     type Output = Identifier;
-    fn load(chunk: &Chunk, _typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, ()> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                return Err(Notice::new(
-                    format!("Identifier Loader"),
-                    msg,
-                    None,
-                    None,
-                    NoticeLevel::Error,
-                    vec![]
-                ))
+                let diag_source = DiagnosticSourceBuilder::new(typeck.module_name.clone(), 0)
+                    .level(DiagnosticLevel::Error)
+                    .message(msg)
+                    .build();
+                typeck.emit_diagnostic(&[], &[diag_source]);
+                return Err(())
             }
         };
         let ident = chunk.read_string();
