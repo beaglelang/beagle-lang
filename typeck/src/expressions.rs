@@ -119,7 +119,7 @@ impl GetTy for ExprElement{
 impl Load for Expr{
     type Output = Expr;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
         let ins: Option<HIRInstruction> = chunk.read_instruction();
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
@@ -145,11 +145,11 @@ impl Load for Expr{
                     ty: ty.clone(),
                     elem: TyValueElement::Bool(value),
                 });
-                return Ok(Expr{
+                return Ok(Some(Expr{
                     kind: Box::new(kind),
                     ty,
                     pos
-                });
+                }));
             }
             Some(HIRInstruction::Integer) => {
                 let value = chunk.read_int();
@@ -161,11 +161,11 @@ impl Load for Expr{
                     elem: TyValueElement::Integer(value),
                     ty: ty.clone(),
                 });
-                return Ok(Expr{
+                return Ok(Some(Expr{
                     kind: Box::new(kind),
                     ty,
                     pos
-                });
+                }));
             }
             Some(HIRInstruction::Float) => {
                 let value = chunk.read_float();
@@ -177,11 +177,11 @@ impl Load for Expr{
                     elem: TyValueElement::Float(value),
                     ty: ty.clone(),
                 });
-                return Ok(Expr{
+                return Ok(Some(Expr{
                     kind: Box::new(kind),
                     ty,
                     pos
-                });
+                }));
             }
             Some(HIRInstruction::String) => {
                 let value = chunk.read_string().to_owned();
@@ -193,26 +193,28 @@ impl Load for Expr{
                     elem: TyValueElement::String(value),
                     ty: ty.clone(),
                 });
-                return Ok(Expr{
+                return Ok(Some(Expr{
                     kind: Box::new(kind),
                     ty,
                     pos
-                });
+                }));
             }
             Some(HIRInstruction::Add) => {
                 let left = match Expr::load(&chunk, typeck){
-                    Ok(expr) => {
+                    Ok(Some(expr)) => {
                         expr
                     }
+                    Ok(None) => return Ok(None),
                     Err(notice) => return Err(notice)
                 };
                 let right = match Expr::load(&chunk, typeck){
-                    Ok(expr) => {
+                    Ok(Some(expr)) => {
                         expr
                     }
+                    Ok(None) => return Ok(None),
                     Err(notice) => return Err(notice)
                 };
-                return Ok(Expr{
+                return Ok(Some(Expr{
                     kind: Box::new(ExprElement::Binary(
                         OpKind::Add,
                         left.clone(),
@@ -220,76 +222,82 @@ impl Load for Expr{
                     )),
                     ty: left.ty,
                     pos
-                })
+                }))
             },
             Some(HIRInstruction::Sub) => {
                 let left = match Expr::load(&chunk, typeck){
-                    Ok(expr) => {
+                    Ok(Some(expr)) => {
                         expr
                     }
+                    Ok(None) => return Ok(None),
                     Err(notice) => return Err(notice)
                 };
                 let right = match Expr::load(&chunk, typeck){
-                    Ok(expr) => {
+                    Ok(Some(expr)) => {
                         expr
                     }
+                    Ok(None) => return Ok(None),
                     Err(notice) => return Err(notice)
                 };
-                return Ok(Expr{
+                return Ok(Some(Expr{
                     kind: Box::new(ExprElement::Binary(
-                        OpKind::Min,
+                        OpKind::Add,
                         left.clone(),
                         right,
                     )),
                     ty: left.ty,
                     pos
-                })
+                }))
             }
             Some(HIRInstruction::Mult) => {
                 let left = match Expr::load(&chunk, typeck){
-                    Ok(expr) => {
+                    Ok(Some(expr)) => {
                         expr
                     }
+                    Ok(None) => return Ok(None),
                     Err(notice) => return Err(notice)
                 };
                 let right = match Expr::load(&chunk, typeck){
-                    Ok(expr) => {
+                    Ok(Some(expr)) => {
                         expr
                     }
+                    Ok(None) => return Ok(None),
                     Err(notice) => return Err(notice)
                 };
-                return Ok(Expr{
+                return Ok(Some(Expr{
                     kind: Box::new(ExprElement::Binary(
-                        OpKind::Mul,
+                        OpKind::Add,
                         left.clone(),
                         right,
                     )),
                     ty: left.ty,
                     pos
-                })
+                }))
             }
             Some(HIRInstruction::Div) => {
                 let left = match Expr::load(&chunk, typeck){
-                    Ok(expr) => {
+                    Ok(Some(expr)) => {
                         expr
                     }
+                    Ok(None) => return Ok(None),
                     Err(notice) => return Err(notice)
                 };
                 let right = match Expr::load(&chunk, typeck){
-                    Ok(expr) => {
+                    Ok(Some(expr)) => {
                         expr
                     }
+                    Ok(None) => return Ok(None),
                     Err(notice) => return Err(notice)
                 };
-                return Ok(Expr{
+                return Ok(Some(Expr{
                     kind: Box::new(ExprElement::Binary(
-                        OpKind::Div,
+                        OpKind::Add,
                         left.clone(),
                         right,
                     )),
                     ty: left.ty,
                     pos
-                })
+                }))
             }
             
             _ => {

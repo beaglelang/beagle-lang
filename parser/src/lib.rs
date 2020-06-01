@@ -13,32 +13,28 @@ use lexer::tokens::{LexerToken, TokenData, TokenType};
 use std::sync::mpsc::{Receiver, Sender};
 
 use ir::{
-    hir::{HIRInstruction},
     Chunk,
 };
 
-use core::{
-    pos::BiPos as Position 
-};
-
-use ir_traits::{
-    WriteInstruction,
-};
 
 use std::sync::{Arc, Mutex};
 
-use notices::{Notice, NoticeLevel};
+use notices::{
+    DiagnosticLevel, DiagnosticBuilder, Diagnostic, DiagnosticSource, DiagnosticSourceBuilder
+};
 
 use futures::executor::ThreadPool;
 
+use module_messages::ModuleMessage;
+
 ///A parse rule, which emits a chunk upon completion. Returns a notice upon error.
 pub trait ParseRule{
-    fn parse(p: &mut Parser) -> Result<(), Notice>;
+    fn parse(p: &mut Parser) -> Result<(), ()>;
 }
 
 ///A trait for parse rules that are part of another parse rule, and require a chunk to be returned as opposed to emitting it.
 pub trait OwnedParse{
-    fn owned_parse(parser: &mut Parser) -> Result<Chunk, Notice>;
+    fn owned_parse(parser: &mut Parser) -> Result<Chunk, DiagnosticSource>;
 }
 
 const PREV_TOKEN: usize = 0;
@@ -53,25 +49,21 @@ pub enum ParseContext{
 
 pub struct ParseManager{
     thread_pool: ThreadPool,
-    notice_tx: Arc<Mutex<Sender<Option<Notice>>>>,
+    notice_tx: Arc<Mutex<Sender<Option<Diagnostic>>>>,
 }
 
 impl ParseManager{
-    pub fn new(notice_tx: Sender<Option<Notice>>) -> Self{
+    pub fn new(notice_tx: Sender<Option<Diagnostic>>) -> Self{
         ParseManager{
             thread_pool: ThreadPool::new().unwrap(),
             notice_tx: Arc::new(Mutex::new(notice_tx)),
         }
     }
 
-    pub fn enqueue_module(&self, module_name: String, token_rx: Receiver<LexerToken>, hir_tx: Sender<Option<Chunk>>){
+    pub fn enqueue_module(&self, module_name: String, token_rx: Receiver<LexerToken>, hir_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Receiver<ModuleMessage>){
         let notice_tx_clone = self.notice_tx.lock().unwrap().clone();
         self.thread_pool.spawn_ok(async move{
-            if let Err(notice) = Parser::parse(module_name.clone(), hir_tx, token_rx, notice_tx_clone.clone()){
-                if notice_tx_clone.send(Some(notice)).is_err(){
-                    println!("Failed to send notice to main compiler, perhaps the notice channel has closed prematurely. Report to the author ASAP.")
-                }
-            }
+            let _ = Parser::parse(module_name.clone(), hir_tx, token_rx, notice_tx_clone.clone(), master_tx, master_rx);
         });
     }
 }
@@ -80,10 +72,12 @@ pub struct Parser {
     pub name: String,
     pub ir_tx: Arc<Mutex<Sender<Option<Chunk>>>>,
     pub token_rx: Receiver<LexerToken>,
-    pub notice_tx: Sender<Option<Notice>>,
+    pub notice_tx: Sender<Option<Diagnostic>>,
     pub context: ParseContext,
 
     active_tokens: [LexerToken; 3],
+    master_tx: Sender<ModuleMessage>,
+    master_rx: Receiver<ModuleMessage>,
 }
 
 impl Parser {
@@ -91,7 +85,9 @@ impl Parser {
         name: String,
         ir_tx: Sender<Option<Chunk>>,
         token_rx: Receiver<LexerToken>,
-        notice_tx: Sender<Option<Notice>>,
+        notice_tx: Sender<Option<Diagnostic>>,
+        master_tx: Sender<ModuleMessage>,
+        master_rx: Receiver<ModuleMessage>,
     ) -> Self {
         Parser {
             name,
@@ -104,7 +100,36 @@ impl Parser {
                 LexerToken::default(),
                 LexerToken::default(),
             ],
+            master_tx,
+            master_rx
         }
+    }
+
+    pub fn request_source_snippet(&self) -> Result<String, DiagnosticSource>{
+        if let Err(_) = self.master_tx.send(ModuleMessage::SourceRequest(self.current_token().pos)){
+            let diag = DiagnosticSourceBuilder::new(self.name.clone(), 0)
+                .level(DiagnosticLevel::Error)
+                .message(format!("The master channel was closed??"))
+                .build();
+                return Err(diag);
+        }
+        return match self.master_rx.recv(){
+            Ok(ModuleMessage::SourceResponse(source_snip)) => Ok(source_snip),
+            Ok(thing) => {
+                let diag = DiagnosticSourceBuilder::new(self.name.clone(), 0)
+                .level(DiagnosticLevel::Error)
+                .message(format!("Not sure what we got but we shouldn't have: {:?}", thing))
+                .build();
+                return Err(diag)
+            },
+            Err(_) => {
+                let diag = DiagnosticSourceBuilder::new(self.name.clone(), 0)
+                .level(DiagnosticLevel::Error)
+                .message(format!("The master channel was closed??"))
+                .build();
+                return Err(diag);
+            }
+        };
     }
 
     #[inline]
@@ -123,7 +148,7 @@ impl Parser {
     }
 
     #[inline]
-    pub fn advance(&mut self) -> Result<(), Notice> {
+    pub fn advance(&mut self) -> Result<(), DiagnosticSource> {
         self.active_tokens[PREV_TOKEN] = self.active_tokens[CURRENT_TOKEN].clone();
         self.active_tokens[CURRENT_TOKEN] = self.active_tokens[NEXT_TOKEN].clone();
         self.active_tokens[NEXT_TOKEN] = match self
@@ -131,50 +156,15 @@ impl Parser {
             .recv_timeout(std::time::Duration::from_secs(1))
         {
             Err(_) =>{ 
-                return Err(Notice::new(
-                    format!("Parser"),
-                    format!("Failed to receive token from tokenizer: token channel closed prematurely.\n
-                        Report this to the author:\n\t
-                        Alex Couch: alcouch65@gmail.com\n\t
-                        Github Issues: https://github.com/beaglelang/beagle-lang/issues\n\t
-                        Turing Tarpit: https://discord.gg/RmgjcES"
-                    ),
-                    Some(self.name.clone()),
-                    Some(self.current_token().pos),
-                    NoticeLevel::Error,
-                    vec![]
-                ))
+                let diag_source = DiagnosticSourceBuilder::new(self.name.clone(), self.current_token().pos.start.0)
+                    .message(format!("Failed to receive token from tokenizer: token channel closed prematurely.\nReport this to the author:\n\tAlex Couch: alcouch65@gmail.com\n\tGithub Issues: https://github.com/beaglelang/beagle-lang/issues\n\tTuring Tarpit: https://discord.gg/RmgjcES"))
+                    .build();
+                return Err(diag_source)
             },
             Ok(t) => t,
         };
 
         Ok(())
-    }
-
-    pub fn emit_notice(&self, pos: Position, level: NoticeLevel, msg: String) {
-        if level == NoticeLevel::Error {
-            let mut halt_chunk = Chunk::new();
-            halt_chunk.write_instruction(HIRInstruction::Halt);
-            if let Err(e) = self.ir_tx.lock().unwrap().send(Some(halt_chunk)) {
-                println!(
-                    "{}Parser notice send error: {}{}",
-                    core::ansi::Fg::Red,
-                    e,
-                    core::ansi::Fg::Reset
-                );
-            }
-        }
-
-        let notice = Notice::new(format!("Parser"), msg, Some(self.name.clone()), Some(pos), level, vec![]);
-
-        if let Err(e) = self.notice_tx.send(Some(notice)) {
-            eprintln!(
-                "{}Parser notice send error: {}{}",
-                core::ansi::Fg::BrightRed,
-                e,
-                core::ansi::Fg::Reset
-            );
-        }
     }
 
     #[inline]
@@ -200,7 +190,7 @@ impl Parser {
     }
 
     #[inline]
-    pub fn check_consume(&mut self, type_: TokenType) -> Result<bool, Notice> {
+    pub fn check_consume(&mut self, type_: TokenType) -> Result<bool, DiagnosticSource> {
         if self.check(type_) {
             if let Err(notice) = self.advance(){
                 return Err(notice)
@@ -212,12 +202,12 @@ impl Parser {
     }
 
     #[inline]
-    pub fn check_consume_next(&mut self, type_: TokenType) -> bool {
+    pub fn check_consume_next(&mut self, type_: TokenType) -> Result<bool, DiagnosticSource> {
         if self.check_next(type_) {
-            self.advance().unwrap();
-            true
+            self.advance()?;
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
@@ -225,62 +215,64 @@ impl Parser {
     pub fn consume(
         &mut self,
         type_: TokenType
-    ) -> Result<&TokenData, Notice> {
-        self.advance().unwrap();
+    ) -> Result<&TokenData, DiagnosticSource> {
+        self.advance()?;
         if self.check(type_) {
             Ok(&self.current_token().data)
         } else {
-            return Err(Notice::new(
-                format!("Parser"),
-                format!("Expected a '{:?}' but instead got {:?}", type_, self.current_token().type_),
-                Some(self.name.clone()),
-                Some(self.current_token().pos),
-                NoticeLevel::Error,
-                vec![]
-            ));
+            let source = match self.request_source_snippet(){
+                Ok(source) => source,
+                Err(diag) => return Err(diag)
+            };
+            let diag_source = DiagnosticSourceBuilder::new(self.name.clone(),self.current_token().pos.start.0)
+                        .message(format!("Expected a '{:?}' but instead got {:?}", type_, self.current_token().type_))
+                        .level(DiagnosticLevel::Error)
+                        .range(self.current_token().pos.col_range())
+                        .source(source)
+                        .build();
+            return Err(diag_source)
         }
+    }
+
+    pub fn emit_parse_diagnostic(&self, notes: &[String], source: &[DiagnosticSource]){
+        let diag = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                    .message(format!("An error occurred during parsing."))
+                    .add_sources(source)
+                    .add_notes(notes)
+                    .build();
+        self.notice_tx.send(Some(diag)).unwrap();
     }
 
     pub fn parse(
         name: String,
         ir_tx: Sender<Option<Chunk>>,
         token_rx: Receiver<LexerToken>,
-        notice_tx: Sender<Option<Notice>>,
-    ) -> Result<(), Notice> {
-        let mut parser = Parser::new(name, ir_tx, token_rx, notice_tx);
-        parser.advance().unwrap();
-        parser.advance().unwrap();
+        notice_tx: Sender<Option<Diagnostic>>,
+        master_tx: Sender<ModuleMessage>,
+        master_rx: Receiver<ModuleMessage>,
+    ) -> Result<(), ()> {
+        let mut parser = Parser::new(name, ir_tx, token_rx, notice_tx, master_tx, master_rx);
+        if let Err(diag) = parser.advance(){
+            parser.emit_parse_diagnostic(&[], &[diag]);
+            return Err(())
+        };
+        if let Err(diag) = parser.advance(){
+            parser.emit_parse_diagnostic(&[], &[diag]);
+            return Err(())
+        };
         while !parser.check(TokenType::Eof) {
-            if let Err(notice) = statements::StatementParser::parse(&mut parser) {
-                let send_error = if parser.ir_tx.lock().unwrap().send(None).is_err(){
-                    Some(Notice::new(
-                        format!("Parser"),
-                        format!("Failed to send halt signal to rest of compiler: channel closed prematurely.\n
+            if let Err(()) = statements::StatementParser::parse(&mut parser) {
+                if parser.ir_tx.lock().unwrap().send(None).is_err(){
+                    parser.notice_tx.send(Some(DiagnosticBuilder::new(DiagnosticLevel::Error)
+                        .message(format!("Failed to send halt signal to rest of compiler: channel closed prematurely.\n
                             Report this to the author:\n\t
                             Alex Couch: alcouch65@gmail.com\n\t
                             Github Issues: https://github.com/beaglelang/beagle-lang/issues\n\t
                             Turing Tarpit: https://discord.gg/RmgjcES"
-                        ),
-                        None,
-                        None,
-                        NoticeLevel::Error,
-                        vec![]
-                    ))
-                }else{
-                    None
-                };
-                return Err(Notice::new(
-                    format!("Parser"),
-                    format!("An error occurred during parsing"),
-                    None,
-                    None,
-                    NoticeLevel::Error,
-                    if send_error.is_none(){ 
-                        vec![notice] 
-                    } else{ 
-                        vec![notice, send_error.unwrap()]
-                    }
-                ))
+                        ))
+                        .build())).unwrap();
+                }
+                return Err(())
             }
         }
         if parser.ir_tx.lock().unwrap().send(None).is_err(){

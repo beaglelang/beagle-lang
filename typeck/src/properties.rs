@@ -79,7 +79,7 @@ impl Inference for Property{
 impl Load for Property{
     type Output = Property;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
@@ -94,16 +94,19 @@ impl Load for Property{
             }
         };
         let mutable = match Mutability::load(chunk, typeck){
-            Ok(mutable) => mutable,
+            Ok(Some(mutable)) => mutable,
+            Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
         };
         let ident = match Identifier::load(chunk, typeck){
-            Ok(ident) => ident,
+            Ok(Some(ident)) => ident,
+            Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
         };
 
         let ty = match Ty::load(chunk, typeck){
-            Ok(ty) => ty,
+            Ok(Some(ty)) => ty,
+            Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
         };
 
@@ -120,10 +123,11 @@ impl Load for Property{
             ))
         };
         let expr = match Expr::load(&expr_chunk, typeck){
-            Ok(expr) => expr,
+            Ok(Some(expr)) => expr,
+            Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
         };
-        return Ok(
+        return Ok(Some(
             Property{
                 ident,
                 pos,
@@ -131,7 +135,7 @@ impl Load for Property{
                 expr,
                 mutable
             }
-        )
+        ))
     }
 }
 

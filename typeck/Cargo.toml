@@ -20,3 +20,4 @@ mutable = { path = "../mutable" }
 ty = { path = "../ty" }
 expr = { path = "../expr" }
 stmt = { path = "../stmt" }
+module_messages = { path = "../module_messages" }

@@ -31,7 +31,7 @@ pub trait Load{
     ///The type being loaded/returned upon success by [load].
     type Output;
     ///Convert the given [chunk] to an IR for the given [typeck].
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice>;
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice>;
 }
 
 pub trait Unload{
@@ -142,7 +142,8 @@ impl<'a> Typeck{
                 return Ok(())
             };
             let statement = match Statement::load(&chunk, self){
-                Ok(statement) => statement,
+                Ok(Some(statement)) => statement,
+                Ok(None) => return Ok(()),
                 Err(notice) => return Err(notice)
             };
             self.module_ir.statements.push(statement);

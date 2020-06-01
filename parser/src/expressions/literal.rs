@@ -14,8 +14,9 @@ use lexer::tokens::{
 };
 
 use notices::{
-    Notice,
-    NoticeLevel,
+    DiagnosticSource,
+    DiagnosticSourceBuilder,
+    DiagnosticLevel
 };
 
 use ir_traits::WriteInstruction;
@@ -23,7 +24,7 @@ use ir_traits::WriteInstruction;
 pub struct LiteralParser;
 
 impl OwnedParse for LiteralParser{
-    fn owned_parse(parser: &mut Parser) -> Result<Chunk, Notice>{
+    fn owned_parse(parser: &mut Parser) -> Result<Chunk, DiagnosticSource>{
         let token = parser.current_token();
         let mut chunk = Chunk::new();
         match &token.type_{
@@ -62,14 +63,21 @@ impl OwnedParse for LiteralParser{
                 chunk.write_pos(token.pos);
                 chunk.write_bool(false);
             }
-            _ => return Err(Notice::new(
-                format!("Literal Parser"),
-                format!("Unrecognized token: {:?}", token.type_),
-                Some(parser.name.clone()),
-                Some(token.pos),
-                NoticeLevel::Error,
-                vec![]
-            ))
+            _ => {
+                let source = match parser.request_source_snippet(){
+                    Ok(source) => source,
+                    Err(diag_source) => {
+                        return Err(diag_source)
+                    }
+                };
+                let diag_source = DiagnosticSourceBuilder::new(parser.name.clone(), token.pos.start.0)
+                    .level(DiagnosticLevel::Error)
+                    .message(format!("Attempted to parse literal expression but instead found {:?}", token.type_))
+                    .range(token.pos.col_range())
+                    .source(source)
+                    .build();
+                return Err(diag_source)
+            }
         }
         Ok(chunk)
     }

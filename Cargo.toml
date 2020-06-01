@@ -23,6 +23,7 @@ members = [
     "expr",
     "ty",
     "stmt",
+    "module_messages",
 ]
 
 [dependencies]

@@ -13,3 +13,4 @@ ir_traits = { path = "../ir_traits", version = "*" }
 futures = { version = "*", features = ["thread-pool"]}
 notices = { path = "../notices", version = "*" }
 core = { path = "../core", version = "*" }
+module_messages = { path = "../module_messages" }

@@ -23,7 +23,7 @@ impl Unload for Identifier{
 
 impl Load for Identifier{
     type Output = Identifier;
-    fn load(chunk: &Chunk, _typeck: &Typeck) -> Result<Self::Output, Notice> {
+    fn load(chunk: &Chunk, _typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
@@ -38,9 +38,9 @@ impl Load for Identifier{
             }
         };
         let ident = chunk.read_string();
-        Ok(Self{
+        Ok(Some(Self{
             ident: ident.to_string(),
             pos,
-        })
+        }))
     }
 }

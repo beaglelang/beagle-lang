@@ -11,10 +11,21 @@ use std::sync::mpsc::{
     Receiver
 };
 
-use notices::{Notice, NoticeLevel};
+use notices::{Diagnostic, DiagnositcBuilder, DiagnosticLevel};
 use typeck::{
     TypeckManager
 };
+
+enum ModuleMessage{
+    SourceRequest,
+    SourceResponse(BiPos),
+}
+
+struct ModuleComms{
+    module_name: String,
+    send: SendChannel<ModuleMessage>,
+    recv: ReceiveChannel<ModuleMessage>
+}
 
 #[allow(dead_code)]
 pub struct Driver{
@@ -22,7 +33,10 @@ pub struct Driver{
     parser_manager: parser::ParseManager,
     typeck_manager: typeck::TypeckManager,
     memmy_manager: memmy::MemmyManager,
-    notice_rx: Receiver<Option<Notice>>
+    notice_rx: Receiver<Option<Diagnostic>>,
+    master_tx: Sender<ModuleMessage>,
+    master_rx: Sender<ModuleMessage>,
+    module_comm_channels: Vec<ModuleComms>, 
 }
 
 impl Driver {
@@ -32,20 +46,21 @@ impl Driver {
         let (notice_tx, notice_rx) = channel::<Option<Notice>>();
         let (_typeck_tx, _typeck_rx) = channel::<Option<Chunk>>();
         let (_mir_tx, _mir_rx) = channel::<Option<Chunk>>();
+        let (master_tx, master_rx) = channel::<ModuleMessage>();
 
         let lexer_manager = lexer::LexerManager::new(notice_tx.clone());
         let parser_manager = parser::ParseManager::new(notice_tx.clone());
         let typeck_manager = TypeckManager::new(notice_tx.clone());
         let memmy_manager = memmy::MemmyManager::new(notice_tx.clone());
-        // let mut tir = ir::Module::new(name.clone());
-        // let typeck_task = TypeckVM::start_checking(name.clone(), ir_rx, notice_tx.clone(), typeck_tx);
-        // let memmy_task = memmy::MemmyGenerator::start(name.clone(), mir_tx, notice_tx, typeck_rx);
+        
         Driver{
             lexer_manager,
             parser_manager,
             typeck_manager,
             memmy_manager,
-            notice_rx
+            notice_rx,
+            master_tx, master_rx,
+            module_comm_channels: HashMap::<String, Channel>::new()
         }
     }
 
@@ -75,7 +90,9 @@ impl Driver {
                     Ok(Some(n)) => {
                         match n.level {
                             NoticeLevel::Halt => break,
-                            _ => n.report(instr.clone().as_str()),
+                            _ => {
+                                
+                            },
                         };
                     },
                     Ok(_) | Err(_) => break,

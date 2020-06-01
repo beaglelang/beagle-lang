@@ -9,6 +9,12 @@ use core::pos::BiPos;
 
 use ir::{ Chunk };
 
+use notices::{
+    DiagnosticSource,
+    DiagnosticSourceBuilder,
+    DiagnosticLevel
+};
+
 #[allow(dead_code)]
 pub struct Module{
     ident: Identifier,
@@ -20,7 +26,7 @@ impl Load for Module{
     type Output = Module;
 
     #[allow(unused_variables)]
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()>{
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource>{
         unimplemented!()
     }
 }

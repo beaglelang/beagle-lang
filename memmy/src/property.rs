@@ -15,6 +15,12 @@ use ir::{
 
 use ir_traits::ReadInstruction;
 
+use notices::{
+    DiagnosticSource,
+    DiagnosticSourceBuilder,
+    DiagnosticLevel
+};
+
 #[derive(Debug, Clone)]
 pub struct Property{
     ident: Identifier,
@@ -26,63 +32,75 @@ pub struct Property{
 
 impl Load for Property{
     type Output = Property;
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()> {
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                memmy.emit_error(msg, BiPos::default())?;
-                return Err(())
+                let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
+                    .level(DiagnosticLevel::Error)
+                    .message(msg)
+                    .build();
+                return Err(diagnosis)
             }
         };
         let ident = match Identifier::load(chunk, memmy){
-            Ok(typename) => typename,
-            Err(()) => return Err(())
+            Ok(pos) => pos,
+            Err(diag) => {
+                return Err(diag)
+            }
         };
         let mutable = chunk.read_bool();
-        let mutable_pos = match chunk.read_pos(){
+        let mut_pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                memmy.emit_error(msg, BiPos::default())?;
-                return Err(())
+                let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
+                    .level(DiagnosticLevel::Error)
+                    .message(msg)
+                    .build();
+                return Err(diagnosis)
             }
         };
 
         let typename_pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                memmy.emit_error(msg, BiPos::default())?;
-                return Err(())
+                let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
+                    .level(DiagnosticLevel::Error)
+                    .message(msg)
+                    .build();
+                return Err(diagnosis)
             }
         };
+
         match chunk.read_instruction(){
             Some(HIRInstruction::Integer) | Some(HIRInstruction::Float) | Some(HIRInstruction::String) | Some(HIRInstruction::Unit) | Some(HIRInstruction::Custom) => {},
             Some(_) => {}
             None =>{
-                memmy.emit_error(format!("Attempted to read type information from typeck while loading property into memmy, found None."), BiPos::default())?;
-                return Err(())
+                let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
+                    .level(DiagnosticLevel::Error)
+                    .message(format!("Attempted to read type information from typeck while loading property into memmy, found None."))
+                    .build();
+                return Err(diagnosis)
             }
         };
+        
         let typename = chunk.read_string();
-
-        let expression = match Expression::load(chunk, memmy){
+        let expr = match Expression::load(chunk, memmy){
             Ok(expr) => expr,
-            Err(()) => return Err(())
+            Err(diag) => return Err(diag)
         };
-
-        return Ok(
-            Property{
-                ident,
-                typename: Identifier{
-                    ident: typename.to_owned(),
-                    pos: typename_pos
-                },
-                pos,
-                mutable: Mutability{
-                    mutable,
-                    pos: mutable_pos
-                },
-                expression,
-            }
-        )
+        Ok(Property{
+            ident,
+            typename: Identifier{
+                ident: typename.to_owned(),
+                pos: typename_pos
+            },
+            mutable: Mutability{
+                mutable,
+                pos: mut_pos
+            },
+            pos,
+            expression: expr,
+        })
     }
 }

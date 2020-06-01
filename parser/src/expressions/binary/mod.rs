@@ -12,31 +12,16 @@ use ir::{
     hir::HIRInstruction,
 };
 
-use lexer::tokens::{
-    TokenType,
-};
-
 use ir_traits::WriteInstruction;
 
 use notices::{
-    Notice,
-    NoticeLevel,
+    DiagnosticSource,
 };
 
 pub struct AddParser;
 
 impl OwnedParse for AddParser{
-    fn owned_parse(parser: &mut Parser) -> Result<Chunk, Notice>{
-        if parser.next_token().type_ != TokenType::Plus{
-            return Err(Notice::new(
-                format!("Plus Parser"),
-                format!("Attempted to parse an add operator binary expression but failed to find '+' token."),
-                Some(parser.name.clone()),
-                Some(parser.current_token().pos),
-                NoticeLevel::Error,
-                vec![]
-            ));
-        }
+    fn owned_parse(parser: &mut Parser) -> Result<Chunk, DiagnosticSource>{
         let mut chunk = Chunk::new();
         chunk.write_instruction(HIRInstruction::Add);
         chunk.write_pos(parser.next_token().pos);
@@ -66,7 +51,7 @@ impl OwnedParse for AddParser{
 pub struct SubParser;
 
 impl OwnedParse for SubParser{
-    fn owned_parse(parser: &mut Parser) -> Result<Chunk, Notice>{
+    fn owned_parse(parser: &mut Parser) -> Result<Chunk, DiagnosticSource>{
         let mut chunk = Chunk::new();
         chunk.write_instruction(HIRInstruction::Sub);
         chunk.write_pos(parser.next_token().pos);
@@ -96,7 +81,7 @@ impl OwnedParse for SubParser{
 pub struct MulParser;
 
 impl OwnedParse for MulParser{
-    fn owned_parse(parser: &mut Parser) -> Result<Chunk, Notice>{
+    fn owned_parse(parser: &mut Parser) -> Result<Chunk, DiagnosticSource>{
         let mut chunk = Chunk::new();
         chunk.write_instruction(HIRInstruction::Sub);
 
@@ -125,7 +110,7 @@ impl OwnedParse for MulParser{
 pub struct DivParser;
 
 impl OwnedParse for DivParser{
-    fn owned_parse(parser: &mut Parser) -> Result<Chunk, Notice>{
+    fn owned_parse(parser: &mut Parser) -> Result<Chunk, DiagnosticSource>{
         let mut chunk = Chunk::new();
         chunk.write_instruction(HIRInstruction::Mult);
 

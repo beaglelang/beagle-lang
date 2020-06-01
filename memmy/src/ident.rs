@@ -10,6 +10,12 @@ use super::{
     Load,
 };
 
+use notices::{
+    DiagnosticSource,
+    DiagnosticSourceBuilder,
+    DiagnosticLevel
+};
+
 #[derive(Debug, Clone)]
 pub struct Identifier{
     pub ident: String,
@@ -18,12 +24,15 @@ pub struct Identifier{
 
 impl Load for Identifier{
     type Output = Identifier;
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()> {
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                memmy.emit_error(msg, BiPos::default())?;
-                return Err(())
+                let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
+                    .level(DiagnosticLevel::Error)
+                    .message(msg)
+                    .build();
+                return Err(diagnosis)
             }
         };
         let ident = chunk.read_string();

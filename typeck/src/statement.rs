@@ -25,33 +25,36 @@ use notices::{
 impl Load for Statement{
     type Output = Statement;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
         match chunk.read_instruction(){
             Some(HIRInstruction::Property) => match Property::load(chunk, typeck){
-                Ok(property) => {
-                    Ok(Statement{
+                Ok(Some(property)) => {
+                    Ok(Some(Statement{
                         kind: StatementKind::Property(property.clone()),
                         pos: property.pos.clone()
-                    })
+                    }))
                 },
+                Ok(None) => return Ok(None),
                 Err(msg) => return Err(msg)
             },
             Some(HIRInstruction::Fn) => match Fun::load(chunk, typeck){
-                Ok(fun) => {
-                    Ok(Statement{
+                Ok(Some(fun)) => {
+                    Ok(Some(Statement{
                         kind: StatementKind::Fun(fun.clone()),
                         pos: fun.pos.clone()
-                    })
+                    }))
                 },
+                Ok(None) => return Ok(None),
                 Err(msg) => return Err(msg)
             },
             Some(HIRInstruction::LocalVar) => match Local::load(chunk, typeck){
-                Ok(local) => {
-                    Ok(Statement{
+                Ok(Some(local)) => {
+                    Ok(Some(Statement{
                         kind: StatementKind::Local(local.clone()),
                         pos: local.pos.clone()
-                    })
+                    }))
                 },
+                Ok(None) => return Ok(None),
                 Err(msg) => return Err(msg)
             }
             _ => {

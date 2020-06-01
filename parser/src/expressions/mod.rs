@@ -12,7 +12,8 @@ use lexer::tokens::{
 };
 
 use notices::{
-    Notice,
+    DiagnosticSource,
+
 };
 
 mod binary;
@@ -21,7 +22,7 @@ mod literal;
 pub struct ExpressionParser;
 
 impl OwnedParse for ExpressionParser{
-    fn owned_parse(parser: &mut Parser) -> Result<Chunk,Notice>{
+    fn owned_parse(parser: &mut Parser) -> Result<Chunk,DiagnosticSource>{
         let mut chunk = Chunk::new();
         let next = parser.next_token();
         match &next.type_{

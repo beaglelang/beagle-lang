@@ -81,7 +81,7 @@ impl<'a> super::Check<'a> for Local{
 impl Load for Local{
     type Output = Local;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
@@ -96,36 +96,33 @@ impl Load for Local{
             }
         };
         let mutable = match Mutability::load(chunk, typeck){
-            Ok(mutable) => mutable,
+            Ok(Some(mutable)) => mutable,
+            Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
         };
         let ident = match Identifier::load(chunk, typeck){
-            Ok(ident) => ident,
+            Ok(Some(ident)) => ident,
+            Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
         };
 
         let ty = match Ty::load(chunk, typeck){
-            Ok(ty) => ty,
+            Ok(Some(ty)) => ty,
+            Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
         };
 
         let expr_chunk = if let Ok(Some(expr_chunk)) = typeck.chunk_rx.recv(){
             expr_chunk
         }else{
-            return Err(Notice::new(
-                format!("Local Loader"),
-                format!("Failed to get HIR chunk for expression while loading property"),
-                Some(typeck.module_name.clone()),
-                Some(pos),
-                NoticeLevel::Error,
-                vec![]
-            ))
+            return Ok(None)
         };
         let expr = match Expr::load(&expr_chunk, typeck){
-            Ok(expr) => expr,
+            Ok(Some(expr)) => expr,
+            Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
         };
-        return Ok(
+        return Ok(Some(
             Local{
                 ident,
                 pos,
@@ -133,7 +130,7 @@ impl Load for Local{
                 expr,
                 mutable
             }
-        )
+        ))
     }
 }
 

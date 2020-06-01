@@ -1,9 +1,9 @@
 var hello: String = "Hello"
 
 fun testFunc(test: String) {
-    let time = 1100 - 20 + 10
+    let time = 1100 - 20 +
 }
 
-fu anotherTest(test: Int, yo: Bool): String{
+fun anotherTest(test: Int, yo: Bool): String{
     let name = "alex"
 }

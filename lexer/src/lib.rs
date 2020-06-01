@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 use std::collections::{
     HashMap,
 };
-use std::sync::{mpsc::Sender, Arc, Mutex};
+use std::sync::{mpsc::{ Sender, Receiver }, Arc, Mutex};
 use futures::{
   executor::ThreadPool,
 };
@@ -14,6 +14,7 @@ pub mod tokens;
 use tokens::{
     LexerToken,
 };
+use module_messages::ModuleMessage;
 
 lazy_static! {
     static ref IDENT_MAP: HashMap<&'static str, tokens::TokenType> = {
@@ -31,23 +32,23 @@ lazy_static! {
 
 pub struct LexerManager{
     thread_pool: ThreadPool,
-    notice_tx: Arc<Mutex<Sender<Option<Notice>>>>,
+    notice_tx: Arc<Mutex<Sender<Option<Diagnostic>>>>,
 }
 
 impl LexerManager{
-    pub fn new(notice_tx: Sender<Option<Notice>>) -> Self{
+    pub fn new(notice_tx: Sender<Option<Diagnostic>>) -> Self{
         LexerManager{
             thread_pool: ThreadPool::new().unwrap(),
             notice_tx: Arc::new(Mutex::new(notice_tx))
         }
     }
 
-    pub fn enqueue_module(&self, module_name: String, input: String, parser_tx: Sender<LexerToken>){
+    pub fn enqueue_module(&self, module_name: String, input: String, parser_tx: Sender<LexerToken>, master_tx: Sender<ModuleMessage>, master_rx: Receiver<ModuleMessage>){
         let notice_tx_clone = self.notice_tx.clone();
         let parser_tx_clone = parser_tx.clone();
         let input_clone = input.clone();
         self.thread_pool.spawn_ok(async move{
-            let mut lexer = Lexer::new(module_name.clone(), input_clone, Arc::new(Mutex::new(parser_tx_clone)));
+            let mut lexer = Lexer::new(module_name.clone(), input_clone, Arc::new(Mutex::new(parser_tx_clone)), master_tx, master_rx);
             let tokenizer_result = lexer.start_tokenizing();
             if let Err(notice) = tokenizer_result{
                 notice_tx_clone.lock().expect("Failed to acquire lock on notice sender.").send(Some(notice)).unwrap();
@@ -64,6 +65,8 @@ pub struct Lexer {
     current_pos: BiPos,
 
     pub token_sender: Arc<Mutex<Sender<tokens::LexerToken>>>,
+    master_tx: Sender<ModuleMessage>,
+    master_rx: Receiver<ModuleMessage>,
 }
 
 impl<'a, 'b> Lexer{
@@ -71,6 +74,8 @@ impl<'a, 'b> Lexer{
         module_name: String,
         input: String,
         token_tx: Arc<Mutex<Sender<LexerToken>>>,
+        master_tx: Sender<ModuleMessage>,
+        master_rx: Receiver<ModuleMessage>,
     ) -> Box<Lexer> {
         let input_str = input.clone();
         let lexer = Box::new(Lexer {
@@ -80,6 +85,8 @@ impl<'a, 'b> Lexer{
             char_idx: 0,
             current_pos: BiPos::default(),
             token_sender: token_tx,
+            master_tx,
+            master_rx
         });
         lexer
     }
@@ -274,7 +281,7 @@ impl<'a, 'b> Lexer{
         })
     }
 
-    fn get_token(&mut self) -> Result<Option<tokens::LexerToken>, Notice> {
+    fn get_token(&mut self) -> Result<Option<tokens::LexerToken>, DiagnosticSource> {
         // println!("Processing char: {:?}", self.peek());
         match self.peek() {
             Some(c) => {
@@ -311,7 +318,31 @@ impl<'a, 'b> Lexer{
                                 Ok(Some(t))
                             },
                             None => {
-                                return Err(Notice::new(format!("Lexer"), format!("Unable to parse string"), Some(self.module_name.clone()), Some(self.current_pos), NoticeLevel::Error, vec![]))
+                                if let Err(_) = self.master_tx.send(ModuleMessage::SourceRequest(self.current_pos)){
+                                    return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), self.current_pos.start.0)
+                                        .level(DiagnosticLevel::Error)
+                                        .message(format!("The master channel was closed??"))
+                                        .build());
+                                }
+                                let source_snip = match self.master_rx.recv(){
+                                    Ok(ModuleMessage::SourceResponse(source_snip)) => source_snip,
+                                    Ok(thing) => return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), self.current_pos.start.0)
+                                    .level(DiagnosticLevel::Error)
+                                    .message(format!("Not sure what we got but we shouldn't have: {:?}", thing))
+                                    .build()),
+                                    Err(_) => {
+                                        return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), self.current_pos.start.0)
+                                            .level(DiagnosticLevel::Error)
+                                            .message(format!("The master channel was closed??"))
+                                            .build());
+                                    }
+                                };
+                                return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), self.current_pos.start.0)
+                                    .level(DiagnosticLevel::Error)
+                                    .message(format!("Unable to parse string"))
+                                    .range(self.current_pos.col_range())
+                                    .source(source_snip)
+                                    .build())
                             }
                         }
                     }
@@ -330,7 +361,12 @@ impl<'a, 'b> Lexer{
                         return Ok(Some(token));
                     }
                     _ => {
-                        return Err(Notice::new(format!("Lexer"), format!("Invalid character"), Some(self.module_name.clone()), Some(self.current_pos), NoticeLevel::Error, vec![]))
+                        let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), self.current_pos.start.0)
+                            .message(format!("Invalid character"))
+                            .level(DiagnosticLevel::Error)
+                            .range(self.current_pos.col_range())
+                            .build();
+                        return Err(diagnosis)
                     }
                 }
                 
@@ -343,7 +379,7 @@ impl<'a, 'b> Lexer{
         }
     }
 
-    pub fn start_tokenizing(&mut self) -> std::result::Result<(), Notice> {
+    pub fn start_tokenizing(&mut self) -> std::result::Result<(), Diagnostic> {
         let token_sender_clone = self.token_sender.clone();
         let guard = token_sender_clone.lock().unwrap();
         loop {
@@ -368,8 +404,11 @@ impl<'a, 'b> Lexer{
                     self.advance();
                     continue;
                 }
-                Err(notice) => {
-                    return Err(Notice::new(format!("Lexer"), format!("An error occurred during tokenization."), None, None, NoticeLevel::Error, vec![notice]));
+                Err(source) => {
+                    return Err(DiagnosticBuilder::new(DiagnosticLevel::Error)
+                        .add_source(source)
+                        .message( format!("An error occurred during tokenization."))
+                        .build());
                 }
             }
         }

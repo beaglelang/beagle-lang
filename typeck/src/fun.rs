@@ -60,7 +60,7 @@ impl<'a> Check<'a> for Fun{
 impl Load for Fun{
     type Output = Fun;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
@@ -75,7 +75,8 @@ impl Load for Fun{
             }
         };
         let ident = match Identifier::load(chunk, typeck){
-            Ok(ident) => ident,
+            Ok(Some(ident)) => ident,
+            Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
         };
         let mut params = vec![];
@@ -109,11 +110,13 @@ impl Load for Fun{
             }
 
             let param_ident = match Identifier::load(chunk, typeck){
-                Ok(ident) => ident,
-                Err(notice) => return Err(notice)
+                Ok(Some(ident)) => ident,
+                Ok(None) => return Ok(None),
+                Err(msg) => return Err(msg)
             };
             let param_type = match Ty::load(chunk, typeck){
-                Ok(ty) => ty,
+                Ok(Some(ty)) => ty,
+                Ok(None) => return Ok(None),
                 Err(notice) => return Err(notice)
             };
             params.push(FunParam{
@@ -123,7 +126,8 @@ impl Load for Fun{
             });
         }
         let return_type = match Ty::load(chunk, typeck){
-            Ok(ty) => ty,
+            Ok(Some(ty)) => ty,
+            Ok(None) => return Ok(None),
             Err(notice) => return Err(notice)
         };
 
@@ -200,7 +204,8 @@ impl Load for Fun{
             }
             next_chunk.jump_to(0).unwrap();
             let statement = match Statement::load(&next_chunk, typeck){
-                Ok(statement) => statement,
+                Ok(Some(statement)) => statement,
+                Ok(None) => return Ok(None),
                 Err(notice) => return Err(notice)
             };
             block.push(statement);
@@ -212,7 +217,7 @@ impl Load for Fun{
             params,
             pos
         };
-        Ok(fun)
+        Ok(Some(fun))
     }
 
 }

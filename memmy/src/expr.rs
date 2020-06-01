@@ -12,6 +12,12 @@ use ir::{
 };
 use ir_traits::ReadInstruction;
 
+use notices::{
+    DiagnosticSource,
+    DiagnosticSourceBuilder,
+    DiagnosticLevel
+};
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum Value{
@@ -48,12 +54,15 @@ pub struct Expression{
 impl Load for Expression{
     type Output = Expression;
 
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()> {
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
-                memmy.emit_error(msg, BiPos::default())?;
-                return Err(())
+                let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
+                    .message(msg)
+                    .level(DiagnosticLevel::Error)
+                    .build();
+                return Err(diagnosis)
             }
         };
 
@@ -92,11 +101,11 @@ impl Load for Expression{
             Some(HIRInstruction::Add) => {
                 let left = match Expression::load(chunk, memmy){
                     Ok(left) => left,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 let right = match Expression::load(chunk, memmy){
                     Ok(right) => right,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 return Ok(Expression{
                     kind: Box::new(ExpressionKind::Binary(OpKind::Plus, left, right)),
@@ -106,11 +115,11 @@ impl Load for Expression{
             Some(HIRInstruction::Sub) => {
                 let left = match Expression::load(chunk, memmy){
                     Ok(left) => left,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 let right = match Expression::load(chunk, memmy){
                     Ok(right) => right,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 return Ok(Expression{
                     kind: Box::new(ExpressionKind::Binary(OpKind::Minus, left, right)),
@@ -120,11 +129,11 @@ impl Load for Expression{
             Some(HIRInstruction::Mult) => {
                 let left = match Expression::load(chunk, memmy){
                     Ok(left) => left,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 let right = match Expression::load(chunk, memmy){
                     Ok(right) => right,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 return Ok(Expression{
                     kind: Box::new(ExpressionKind::Binary(OpKind::Mult, left, right)),
@@ -134,11 +143,11 @@ impl Load for Expression{
             Some(HIRInstruction::Div) => {
                 let left = match Expression::load(chunk, memmy){
                     Ok(left) => left,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 let right = match Expression::load(chunk, memmy){
                     Ok(right) => right,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 return Ok(Expression{
                     kind: Box::new(ExpressionKind::Binary(OpKind::Div, left, right)),
@@ -146,8 +155,12 @@ impl Load for Expression{
                 })
             }
             _ => {
-                memmy.emit_error(format!("This feature is not yet implemented: {:?}", opcode.clone().unwrap()), BiPos::default())?;
-                return Err(())
+                let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), pos.start.0)
+                            .message(format!("This feature is not yet implemented: {:?}", opcode.clone().unwrap()))
+                            .level(DiagnosticLevel::Error)
+                            .range(pos.col_range())
+                            .build();
+                return Err(diagnosis)
             }
         }
     }

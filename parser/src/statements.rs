@@ -11,14 +11,14 @@ use lexer::tokens::{
 };
 
 use notices::{
-    NoticeLevel,
-    Notice
+    DiagnosticSourceBuilder,
+    DiagnosticLevel
 };
 
 pub struct StatementParser;
 
 impl ParseRule for StatementParser{
-    fn parse(parser: &mut Parser) -> Result<(), Notice>{
+    fn parse(parser: &mut Parser) -> Result<(), ()>{
         let token = parser.current_token();
         match token.type_ {
             TokenType::KwMod => ModuleParser::parse(parser)?,
@@ -26,14 +26,21 @@ impl ParseRule for StatementParser{
             TokenType::KwVar => PropertyParser::parse(parser)?,
             TokenType::KwFun => FunctionParser::parse(parser)?,
             _ => {
-                return Err(Notice::new(
-                    format!("Statement Parser"),
-                    format!("Unexpected token found: {:?}", token.type_),
-                    Some(parser.name.clone()),
-                    Some(parser.current_token().pos),
-                    NoticeLevel::Error,
-                    vec![]
-                ));
+                let source = match parser.request_source_snippet(){
+                    Ok(source) => source,
+                    Err(diag) => {
+                        parser.emit_parse_diagnostic(&[], &[diag]);
+                        return Err(())
+                    }
+                };
+                let diag_source = DiagnosticSourceBuilder::new(parser.name.clone(), token.pos.start.0)
+                    .level(DiagnosticLevel::Error)
+                    .message(format!("Unexpected token found: {:?}", token.type_))
+                    .range(token.pos.col_range())
+                    .source(source)
+                    .build();
+                parser.emit_parse_diagnostic(&[], &[diag_source]);
+                return Err(());
             }
         }
         Ok(())

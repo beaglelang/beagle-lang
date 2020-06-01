@@ -11,7 +11,7 @@ use lexer::tokens::{
     TokenType,
 };
 
-use notices::{ NoticeLevel, Notice };
+use notices::{ DiagnosticLevel, DiagnosticSourceBuilder, DiagnosticBuilder };
 
 use ir::{
     Chunk,
@@ -23,7 +23,7 @@ use ir_traits::WriteInstruction;
 pub struct FunctionParser;
 
 impl ParseRule for FunctionParser{
-    fn parse(parser: &mut Parser) -> Result<(),Notice>{
+    fn parse(parser: &mut Parser) -> Result<(),()>{
         let mut chunk = Chunk::new();
         let lpos = parser.current_token().pos;
         if let Err(_) = parser.check_consume(TokenType::KwFun) {
@@ -31,18 +31,26 @@ impl ParseRule for FunctionParser{
                 "Expected a fun keyword token, but instead got {}",
                 parser.current_token()
             );
-            parser.emit_notice(lpos, NoticeLevel::Error, message);
-            return Err(Notice::new(
-                format!("Function Parser"), 
-                format!(
-                    "Expected a fun keyword token, but instead got {}",
-                    parser.current_token()
-                ), 
-                Some(parser.name.clone()), 
-                Some(lpos), 
-                NoticeLevel::Error,
-                vec![]
-            ));
+            let source = match parser.request_source_snippet(){
+                Ok(source) => {
+                    DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
+                        .message(message)
+                        .range(parser.current_token().pos.col_range())
+                        .level(DiagnosticLevel::Error)
+                        .source(source)
+                        .build()
+                },
+                Err(diag) => 
+                {
+                    diag
+                }
+            };
+            let diag = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                .message(format!("An error ocurred while parsing a function."))
+                .add_source(source)
+                .build();
+            parser.notice_tx.send(Some(diag)).unwrap();
+            return Err(())
         }
         chunk.write_instruction(HIRInstruction::Fn);
         chunk.write_pos(lpos.clone());
@@ -51,48 +59,64 @@ impl ParseRule for FunctionParser{
                 "Expected an identifier token, but instead got {}",
                 parser.current_token()
             );
-            parser.emit_notice(lpos, NoticeLevel::Error, message);
-            return Err(Notice::new(
-                format!("Function Parser"), 
-                format!(
-                    "Expected an identifier token, but instead got {}",
-                    parser.current_token()
-                ), 
-                Some(parser.name.clone()), 
-                Some(parser.current_token().pos), 
-                NoticeLevel::Error,
-                vec![]
-            ));
+            let source = match parser.request_source_snippet(){
+                Ok(source) => {
+                    DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
+                        .message(message)
+                        .range(parser.current_token().pos.col_range())
+                        .level(DiagnosticLevel::Error)
+                        .source(source)
+                        .build()
+                },
+                Err(diag) => 
+                {
+                    diag
+                }
+            };
+            let diag = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                    .message(format!("An error ocurred while parsing a function."))
+                    .add_source(source)
+                    .build();
+            parser.notice_tx.send(Some(diag)).unwrap();
+            return Err(())
         }
         let name = match &parser.current_token().data {
             TokenData::String(s) => (*s).to_string(),
             _ => {
-                return Err(Notice::new(
-                    format!("Function Parser"), 
-                    format!(
-                        "Failed to extract string data from identifier token.",
-                    ), 
-                    Some(parser.name.clone()), 
-                    Some(parser.current_token().pos), 
-                    NoticeLevel::Error,
-                    vec![]
-                ));
+                let source = match parser.request_source_snippet(){
+                    Ok(source) => {
+                        DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
+                            .message(format!("Failed to extract string data from identifier token."))
+                            .range(parser.current_token().pos.col_range())
+                            .level(DiagnosticLevel::Error)
+                            .source(source)
+                            .build()
+                    },
+                    Err(diag) => 
+                    {
+                        diag
+                    }
+                };
+                let diag = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                    .message(format!("An error ocurred while parsing a function."))
+                    .add_source(source)
+                    .build();
+                parser.notice_tx.send(Some(diag)).unwrap();
+                return Err(())
             }
         };
         chunk.write_pos(parser.current_token().pos);
         chunk.write_string(name);
-        if parser.advance().is_err(){
-            return Err(Notice::new(
-                format!("Function Parser"), 
-                format!(
-                    "Failed to advance parser. This is a bug in the compiler, please report to the author.\n
-                    It's possible that the tokenizer closed its channel prematurely, which shouldn't happen.",
-                ), 
-                Some(parser.name.clone()), 
-                Some(parser.current_token().pos), 
-                NoticeLevel::Error,
-                vec![]
-            ));
+        match parser.advance(){
+            Ok(()) => {},
+            Err(source) => {
+                let diag = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                    .add_source(source)
+                    .message(format!("An error occurred while parsing a function."))
+                    .build();
+                parser.notice_tx.send(Some(diag)).unwrap();
+                return Err(())
+            }
         }
         if parser.check(TokenType::LParen){
             loop{
@@ -106,18 +130,35 @@ impl ParseRule for FunctionParser{
                 let param_name = match parser.consume(TokenType::Identifier) {
                     Ok(TokenData::String(s)) => (*s).to_string(),
                     Ok(_) => {
-                        return Err(Notice::new(
-                            format!("Function Parser"), 
-                            format!(
-                                "Failed to extract string data from identifier token.",
-                            ), 
-                            Some(parser.name.clone()), 
-                            Some(parser.current_token().pos), 
-                            NoticeLevel::Error,
-                            vec![]
-                        ));
+                        let source = match parser.request_source_snippet(){
+                            Ok(source) => {
+                                DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
+                                    .message(format!("Failed to extract string data from identifier token."))
+                                    .range(parser.current_token().pos.col_range())
+                                    .level(DiagnosticLevel::Error)
+                                    .source(source)
+                                    .build()
+                            },
+                            Err(diag) => 
+                            {
+                                diag
+                            }
+                        };
+                        let diag = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                            .message(format!("An error ocurred while parsing a function."))
+                            .add_source(source)
+                            .build();
+                        parser.notice_tx.send(Some(diag)).unwrap();
+                        return Err(())
                     },
-                    Err(notice) => return Err(notice),
+                    Err(source) => {
+                        let diag = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                            .add_source(source)
+                            .message(format!("An error occurred while parsing a function."))
+                            .build();
+                        parser.notice_tx.send(Some(diag)).unwrap();
+                        return Err(())
+                    },
                 };
                 param_chunk.write_pos(loc);
                 param_chunk.write_string(param_name);
@@ -125,22 +166,50 @@ impl ParseRule for FunctionParser{
                 let param_type = TypeParser::get_type(parser).unwrap();
                 param_chunk.write_chunk(param_type);
                 chunk.write_chunk(param_chunk);
-                parser.advance().unwrap();
+                match parser.advance(){
+                    Ok(()) => {},
+                    Err(source) => {
+                        let diag = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                            .add_source(source)
+                            .message(format!("An error occurred while parsing a function."))
+                            .build();
+                        parser.notice_tx.send(Some(diag)).unwrap();
+                        return Err(())
+                    }
+                }
             }
         }
 
-        if parser.check_consume_next(TokenType::Colon){
-            let retype_chunk = TypeParser::get_type(parser)?;
-            chunk.write_chunk(retype_chunk);
-        }else{
-            chunk.write_pos(parser.current_token().pos);
-            chunk.write_instruction(HIRInstruction::Unit);
+        match parser.check_consume_next(TokenType::Colon){
+            Ok(true) => {
+                let retype_chunk = match TypeParser::get_type(parser){
+                    Ok(chunk) => chunk,
+                    Err(diag) => {
+                        parser.emit_parse_diagnostic(&[], &[diag]);
+                        return Err(())
+                    }
+                };
+                chunk.write_chunk(retype_chunk);
+            }
+            Ok(false) => {
+                chunk.write_pos(parser.current_token().pos);
+                chunk.write_instruction(HIRInstruction::Unit);
+            }
+            Err(diag) => {
+                let diagnostic = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                                    .message(format!("An error occurred while parsing a function."))
+                                    .add_source(diag)
+                                    .build();
+                parser.notice_tx.send(Some(diagnostic)).unwrap();
+                return Err(())
+            }
         }
 
         parser.emit_ir_whole(chunk);
 
-        if let Err(notice) = parser.consume(TokenType::LCurly){
-            return Err(notice);
+        if let Err(source) = parser.consume(TokenType::LCurly){
+            parser.emit_parse_diagnostic(&[], &[source]);
+            return Err(());
         }
 
         parser.context = ParseContext::Local;
@@ -150,9 +219,19 @@ impl ParseRule for FunctionParser{
         body_chunk.write_pos(parser.current_token().pos);
         parser.emit_ir_whole(body_chunk);
         while let Ok(false) = parser.check_consume(TokenType::RCurly){
-            parser.advance().unwrap();
-            if let Err(notice) = LocalStatementParser::parse(parser){
-                return Err(notice)
+            match parser.advance(){
+                Ok(()) => {},
+                Err(source) => {
+                    let diag = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                        .add_source(source)
+                        .message(format!("An error occurred while parsing a function."))
+                        .build();
+                    parser.notice_tx.send(Some(diag)).unwrap();
+                    return Err(())
+                }
+            }
+            if let Err(()) = LocalStatementParser::parse(parser){
+                return Err(())
             }
         }
         let mut end_chunk = Chunk::new();

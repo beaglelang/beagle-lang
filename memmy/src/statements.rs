@@ -12,6 +12,12 @@ use core::pos::BiPos;
 
 use ir_traits::{ ReadInstruction };
 
+use notices::{
+    DiagnosticSource,
+    DiagnosticSourceBuilder,
+    DiagnosticLevel
+};
+
 #[derive(Debug, Clone)]
 pub struct Statement{
     pos: BiPos,
@@ -28,18 +34,22 @@ pub enum StatementKind{
 impl Load for Statement{
     type Output = Statement;
 
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()> {
-        match chunk.read_instruction(){
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource> {
+        let ins = chunk.read_instruction();
+        match &ins{
             Some(HIRInstruction::Fn) => {
                 let fun = match Fun::load(chunk, memmy){
                     Ok(fun) => fun,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
                     Err(msg) => {
-                        memmy.emit_error(msg, BiPos::default())?;
-                        return Err(())
+                        let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
+                            .level(DiagnosticLevel::Error)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
                 Ok(Statement{
@@ -50,13 +60,16 @@ impl Load for Statement{
             Some(HIRInstruction::Property) => {
                 let property = match Property::load(chunk, memmy){
                     Ok(fun) => fun,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
                     Err(msg) => {
-                        memmy.emit_error(msg, BiPos::default())?;
-                        return Err(())
+                        let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
+                            .level(DiagnosticLevel::Error)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
                 Ok(Statement{
@@ -67,13 +80,16 @@ impl Load for Statement{
             Some(HIRInstruction::LocalVar) => {
                 let local = match Local::load(chunk, memmy){
                     Ok(local) => local,
-                    Err(()) => return Err(())
+                    Err(diag) => return Err(diag)
                 };
                 let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
                     Err(msg) => {
-                        memmy.emit_error(msg, BiPos::default())?;
-                        return Err(())
+                        let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
+                            .level(DiagnosticLevel::Error)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
                 Ok(Statement{
@@ -82,8 +98,11 @@ impl Load for Statement{
                 })
             }
             _ => {
-                memmy.emit_error(format!("Unimplemented. This should only be seen in developer mode."), BiPos::default())?;
-                return Err(())
+                let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
+                        .message(format!("This feature is not yet implemented: {:?}", ins.clone().unwrap()))
+                        .level(DiagnosticLevel::Error)
+                        .build();
+                return Err(diagnosis)
             }
         }
         

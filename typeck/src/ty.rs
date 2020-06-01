@@ -49,7 +49,7 @@ impl Unload for Ty{
 impl Load for Ty{
     type Output = Ty;
 
-    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Self::Output, Notice> {
+    fn load(chunk: &Chunk, typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
@@ -83,10 +83,10 @@ impl Load for Ty{
                 ))
             }
         };
-        Ok(Ty{
+        Ok(Some(Ty{
             ident,
             pos
-        })
+        }))
     }
 }
 

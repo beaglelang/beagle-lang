@@ -17,7 +17,7 @@ use mutable::Mutability;
 
 impl Load for Mutability{
     type Output = Mutability;
-    fn load(chunk: &Chunk, _typeck: &Typeck) -> Result<Self::Output, Notice> {
+    fn load(chunk: &Chunk, _typeck: &Typeck) -> Result<Option<Self::Output>, Notice> {
         let mutable = chunk.read_bool();
         let mut_pos = match chunk.read_pos(){
             Ok(pos) => pos,
@@ -32,10 +32,10 @@ impl Load for Mutability{
                 ))
             }
         };
-        Ok(Mutability{
+        Ok(Some(Mutability{
             mutable,
             pos: mut_pos
-        })
+        }))
     }
 }
 

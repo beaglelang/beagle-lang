@@ -9,7 +9,7 @@ use ir::{
 
 use ir_traits::WriteInstruction;
 
-use notices::{ Notice, NoticeLevel };
+use notices::{ DiagnosticSourceBuilder, DiagnosticSource, DiagnosticLevel };
 
 use lexer::tokens::{
     TokenType,
@@ -19,7 +19,7 @@ use lexer::tokens::{
 pub struct TypeParser;
 
 impl TypeParser{
-    pub fn get_type(parser: &mut Parser) -> Result<Chunk, Notice>{
+    pub fn get_type(parser: &mut Parser) -> Result<Chunk, DiagnosticSource>{
         let mut chunk = Chunk::new();
         if let Err(notice) = parser.advance(){
             return Err(notice)
@@ -41,15 +41,22 @@ impl TypeParser{
                 }
                 chunk
             }
-            _ => return Err(Notice::new(
-                format!("Type Parser"),
-                format!("Expected a type identifier but instead got {:?}", current_token.type_),
-                Some(parser.name.clone()),
-                Some(current_token.pos),
-                NoticeLevel::Error,
-                vec![]
-            )),
+            _ => {
+                let source = match parser.request_source_snippet(){
+                    Ok(source) => source,
+                    Err(diag) => {
+                        return Err(diag)
+                    }
+                };
+                let diag_source = DiagnosticSourceBuilder::new(parser.name.clone(), current_token.pos.start.0)
+                    .level(DiagnosticLevel::Error)
+                    .message(format!("Expected a type identifier but instead got {:?}", current_token.type_))
+                    .source(source)
+                    .build();
+                return Err(diag_source)
+            },
         };
+        
         Ok(ret)
     }
 }

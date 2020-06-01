@@ -19,3 +19,4 @@ ir_derive = { path = "../ir_derive" }
 ir_traits = { path = "../ir_traits" }
 parser = { path = "../parser" }
 lexer = { path = "../lexer" }
+module_messages = { path = "../module_messages" }

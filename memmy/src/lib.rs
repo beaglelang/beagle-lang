@@ -27,13 +27,18 @@ use std::{
 };
 
 use notices::{
-    Notice,
-    NoticeLevel
+    Diagnostic,
+    DiagnosticBuilder,
+    DiagnosticLevel,
+    DiagnosticSource,
+    DiagnosticSourceBuilder
 };
 
 use core::pos::BiPos;
 
 use futures::executor::ThreadPool;
+
+use module_messages::ModuleMessage;
 
 mod statements;
 mod ident;
@@ -45,11 +50,11 @@ mod module;
 
 pub trait Load{
     type Output;
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()>;
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource>;
 }
 
 pub trait Check{
-    fn check(&self, memmy: &MemmyGenerator) -> Result<(),()>;
+    fn check(&self, memmy: &MemmyGenerator) -> Result<(), DiagnosticSource>;
 }
 
 pub trait Unload{
@@ -74,12 +79,12 @@ pub struct MemmyManager{
     ///The threadpool of typeck instances. This is populated by [enqueueModule].
     thread_pool: ThreadPool,
     ///A global copy of a notice sender channel that all typeck's are given clones of.
-    notice_tx: Sender<Option<Notice>>,
+    notice_tx: Sender<Option<Diagnostic>>,
 }
 
 impl MemmyManager{
     ///Create a new memmy manager with the given notice sender channel.
-    pub fn new(notice_tx: Sender<Option<Notice>>) -> Self{
+    pub fn new(notice_tx: Sender<Option<Diagnostic>>) -> Self{
         MemmyManager{
             thread_pool: ThreadPool::new().unwrap(),
             notice_tx,
@@ -88,11 +93,11 @@ impl MemmyManager{
 
     ///Enqueue a module for being type checked in parallel to other stages. See [Driver] for more info.
     ///This will spawn a new task/thread in thread_pool which executes [Typeck::start_checking].
-    pub fn enqueue_module(&self, module_name: String, typeck_rx: Receiver<Option<Chunk>>, mir_tx: Sender<Option<Chunk>>){
+    pub fn enqueue_module(&self, module_name: String, typeck_rx: Receiver<Option<Chunk>>, mir_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Receiver<ModuleMessage>){
         let notice_tx_clone = self.notice_tx.clone();
         let module_name_clone = module_name.clone();
         self.thread_pool.spawn_ok(async move{
-            let typeck = MemmyGenerator::start(module_name_clone.clone(), mir_tx, notice_tx_clone.clone(), typeck_rx);
+            let typeck = MemmyGenerator::start(module_name_clone.clone(), mir_tx, notice_tx_clone.clone(), typeck_rx, master_tx, master_rx);
             if let Err(()) = typeck{
                 return
             };
@@ -107,45 +112,38 @@ pub struct MemmyGenerator{
     final_chunk: Chunk,
     mir_tx: Sender<Option<Chunk>>,
     typeck_rx: Receiver<Option<Chunk>>,
-    notice_tx: Sender<Option<Notice>>
+    notice_tx: Sender<Option<Diagnostic>>,
+    master_tx: Sender<ModuleMessage>,
+    master_rx: Receiver<ModuleMessage>,
 }
 
 impl MemmyGenerator{
-    fn emit_error(&self, msg: String, pos: BiPos) -> Result<(),()>{
-        self.emit_notice(msg, NoticeLevel::Error, pos)
-    }
-
-    fn emit_notice(&self, msg: String, level: NoticeLevel, pos: BiPos) -> Result<(),()>{
-        if self.notice_tx.send(
-            Some(Notice::new(format!("Memmy"), msg, Some(self.module_name.clone()), Some(pos), level, vec![]))
-        ).is_err(){
-            return Err(())
-        }
-        return Ok(())
-    }
 
     #[allow(dead_code)]
-    fn determine_alloc_size(&mut self, chunk: &mut Chunk) -> Option<(usize, Option<Chunk>)>{
+    fn determine_alloc_size(&mut self, chunk: &mut Chunk) -> Result<(usize, Option<Chunk>), DiagnosticSource>{
         let mut ret_chunk = Chunk::new();
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
-            Err(_) => {
-                return None
+            Err(msg) => {
+                let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                    .message(msg)
+                    .build();
+                return Err(diagnosis)
             }
         };
         match FromPrimitive::from_u8(chunk.get_current()){
             Some(HIRInstruction::Float) => {
                 ret_chunk.write_instruction(MIRInstructions::Float);
-                Some((size_of::<f32>(), Some(ret_chunk)))
+                Ok((size_of::<f32>(), Some(ret_chunk)))
             },
             Some(HIRInstruction::Integer) => {
                 ret_chunk.write_instruction(MIRInstructions::Integer);
-                Some((size_of::<i32>(), Some(ret_chunk)))
+                Ok((size_of::<i32>(), Some(ret_chunk)))
             },
             Some(HIRInstruction::Bool) => 
             {
                 ret_chunk.write_instruction(MIRInstructions::Bool);
-                Some((size_of::<bool>(), Some(ret_chunk)))
+                Ok((size_of::<bool>(), Some(ret_chunk)))
             },
             Some(HIRInstruction::String) => {
                 chunk.advance();
@@ -153,24 +151,75 @@ impl MemmyGenerator{
                 let mut new_chunk = Chunk::new();
                 new_chunk.write_instruction(MIRInstructions::String);
                 new_chunk.write_str(name.clone());
-                Some((name.len(), Some(new_chunk)))
+                Ok((name.len(), Some(new_chunk)))
             },
             Some(HIRInstruction::None) => {
-                self.emit_error("Found an untyped object, which is an illegal operation. This should not be happening. Please report this to the author.".to_string(), pos).unwrap();
-                None
+                if let Err(_) = self.master_tx.send(ModuleMessage::SourceRequest(pos)){
+                    return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                        .level(DiagnosticLevel::Error)
+                        .message(format!("The master channel was closed??"))
+                        .build());
+                }
+                let source_snip = match self.master_rx.recv(){
+                    Ok(ModuleMessage::SourceResponse(source_snip)) => source_snip,
+                    Ok(thing) => return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                    .level(DiagnosticLevel::Error)
+                    .message(format!("Not sure what we got but we shouldn't have: {:?}", thing))
+                    .build()),
+                    Err(_) => {
+                        return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                            .level(DiagnosticLevel::Error)
+                            .message(format!("The master channel was closed??"))
+                            .build());
+                    }
+                };
+                let diagnostic_source = DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                    .range(pos.col_range())
+                    .message("Found an untyped object, which is an illegal operation. This should not be happening. Please report this to the author.".to_string())
+                    .source(source_snip)
+                    .level(DiagnosticLevel::Error)
+                    .build();
+                Err(diagnostic_source)
             },
             _ => {
-                self.emit_error(format!("Found an unknown bytecode instruction: {:?}", chunk.get_current()).to_string(), pos).unwrap();
-                None
+                if let Err(_) = self.master_tx.send(ModuleMessage::SourceRequest(pos)){
+                    return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                        .level(DiagnosticLevel::Error)
+                        .message(format!("The master channel was closed??"))
+                        .build());
+                }
+                let source_snip = match self.master_rx.recv(){
+                    Ok(ModuleMessage::SourceResponse(source_snip)) => source_snip,
+                    Ok(thing) => return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                    .level(DiagnosticLevel::Error)
+                    .message(format!("Not sure what we got but we shouldn't have: {:?}", thing))
+                    .build()),
+                    Err(_) => {
+                        return Err(DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                            .level(DiagnosticLevel::Error)
+                            .message(format!("The master channel was closed??"))
+                            .build());
+                    }
+                };
+                let diagnosticSource = DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                    .range(pos.col_range())
+                    .message("Found an untyped object, which is an illegal operation. This should not be happening. Please report this to the author.".to_string())
+                    .source(source_snip)
+                    .level(DiagnosticLevel::Error)
+                    .build();
+                Err(diagnosticSource)
             }
         }
     }
 
-    fn hir_2_mir(&mut self, chunk: &mut Chunk) -> Result<Chunk, ()>{
+    fn hir_2_mir(&mut self, chunk: &mut Chunk) -> Result<Chunk, DiagnosticSource>{
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
-            Err(_) => {
-                return Err(())
+            Err(msg) => {
+                let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                    .message(msg)
+                    .build();
+                return Err(diagnosis)
             }
         };
         let mut new_chunk = Chunk::new();
@@ -181,94 +230,123 @@ impl MemmyGenerator{
                 chunk.advance();
                 let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
-                    Err(_) => {
-                        return Err(())
+                    Err(msg) => {
+                        let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
                 new_chunk.write_pos(pos);
                 let value = chunk.read_bool();
                 new_chunk.write_bool(value);
                 chunk.advance();
-                let vpos = match chunk.read_pos(){
+                let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
-                    Err(_) => {
-                        return Err(())
+                    Err(msg) => {
+                        let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
-                new_chunk.write_pos(vpos);
+                new_chunk.write_pos(pos);
             }
             Some(HIRInstruction::Integer) => {
                 new_chunk.write_instruction(MIRInstructions::Integer);
                 chunk.advance();
                 let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
-                    Err(_) => {
-                        return Err(())
+                    Err(msg) => {
+                        let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
                 new_chunk.write_pos(pos);
                 let value = chunk.read_int();
                 new_chunk.write_int(value);
                 chunk.advance();
-                let vpos = match chunk.read_pos(){
+                let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
-                    Err(_) => {
-                        return Err(())
+                    Err(msg) => {
+                        let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
-                new_chunk.write_pos(vpos);
+                new_chunk.write_pos(pos);
             }
             Some(HIRInstruction::Float) => {
                 new_chunk.write_instruction(MIRInstructions::Float);
                 chunk.advance();
                 let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
-                    Err(_) => {
-                        return Err(())
+                    Err(msg) => {
+                        let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
                 new_chunk.write_pos(pos);
                 let value = chunk.read_float();
                 new_chunk.write_float(value);
                 chunk.advance();
-                let vpos = match chunk.read_pos(){
+                let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
-                    Err(_) => {
-                        return Err(())
+                    Err(msg) => {
+                        let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
-                new_chunk.write_pos(vpos);
+                new_chunk.write_pos(pos);
             }
             Some(HIRInstruction::String) => {
                 new_chunk.write_instruction(MIRInstructions::String);
                 chunk.advance();
                 let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
-                    Err(_) => {
-                        return Err(())
+                    Err(msg) => {
+                        let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
                 new_chunk.write_pos(pos);
                 let value = chunk.read_string();
                 new_chunk.write_str(value);
                 chunk.advance();
-                let vpos = match chunk.read_pos(){
+                let pos = match chunk.read_pos(){
                     Ok(pos) => pos,
-                    Err(_) => {
-                        return Err(())
+                    Err(msg) => {
+                        let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                            .message(msg)
+                            .build();
+                        return Err(diagnosis)
                     }
                 };
-                new_chunk.write_pos(vpos);
+                new_chunk.write_pos(pos);
             }
             _ => {
-                self.emit_error(format!("Unexpected instruction: {}", chunk.get_current()), pos)?;
+                let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                            .message(format!("Unexpected instruction: {}", chunk.get_current()))
+                            .level(DiagnosticLevel::Error)
+                            .range(pos.col_range())
+                            .build();
+                return Err(diagnosis)
             }
         }
         Ok(new_chunk)
     }
 
     #[allow(dead_code)]
-    fn convert_function_block(&mut self, mut chunk: &mut Chunk) -> Result<(),()>{
+    fn convert_function_block(&mut self, mut chunk: &mut Chunk) -> Result<(),DiagnosticSource>{
         let mut header = Chunk::new();
         let mut preallocs = Chunk::new();
         let mut other = Chunk::new();
@@ -280,17 +358,27 @@ impl MemmyGenerator{
         }else{
             let pos = match chunk.read_pos(){
                 Ok(pos) => pos,
-                Err(_) => {
-                    return Err(())
+                Err(msg) => {
+                    let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                        .message(msg)
+                        .build();
+                    return Err(diagnosis)
                 }
             };
-            self.emit_error(format!("Expected an Fn HIR instruction, instead got {}", chunk.get_current()), pos)?;
-            return Err(())
+            let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), pos.start.0)
+                            .message(format!("Expected an Fn HIR instruction, instead got {}", chunk.get_current()))
+                            .level(DiagnosticLevel::Error)
+                            .range(pos.col_range())
+                            .build();
+            return Err(diagnosis)
         }
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
-            Err(_) => {
-                return Err(())
+            Err(msg) => {
+                let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                    .message(msg)
+                    .build();
+                return Err(diagnosis)
             }
         };
         header.write_pos(pos);
@@ -312,8 +400,11 @@ impl MemmyGenerator{
                     //Get the position of the let keyword
                     let var_pos = match chunk.read_pos(){
                         Ok(pos) => pos,
-                        Err(_) => {
-                            return Err(())
+                        Err(msg) => {
+                            let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                                .message(msg)
+                                .build();
+                            return Err(diagnosis)
                         }
                     };
                     chunk.advance();
@@ -323,8 +414,11 @@ impl MemmyGenerator{
                     //Get the position of the name
                     let name_pos = match chunk.read_pos(){
                         Ok(pos) => pos,
-                        Err(_) => {
-                            return Err(())
+                        Err(msg) => {
+                            let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                                .message(msg)
+                                .build();
+                            return Err(diagnosis)
                         }
                     };
                     //Mutable flag
@@ -332,16 +426,19 @@ impl MemmyGenerator{
                     chunk.advance();
                     let mut_pos = match chunk.read_pos(){
                         Ok(pos) => pos,
-                        Err(_) => {
-                            return Err(())
+                        Err(msg) => {
+                            let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                                .message(msg)
+                                .build();
+                            return Err(diagnosis)
                         }
                     };
                     //Determine the size of the object being allocated
-                    let size = if let Some(size) = self.determine_alloc_size(chunk){
-                        size
-                    }else{
-                        self.emit_error("Failed to determine size of local object.".to_string(), var_pos)?;
-                        return Err(())
+                    let size = match self.determine_alloc_size(chunk){
+                        Ok(size) => size,
+                        Err(diag) => {
+                            return Err(diag)
+                        }
                     };
                     
                     preallocs.write_str(name.clone().as_str());
@@ -362,8 +459,11 @@ impl MemmyGenerator{
                     //Get the position of the let keyword
                     let var_pos = match chunk.read_pos(){
                         Ok(pos) => pos,
-                        Err(_) => {
-                            return Err(())
+                        Err(msg) => {
+                            let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                                .message(msg)
+                                .build();
+                            return Err(diagnosis)
                         }
                     };
                     chunk.advance();
@@ -373,8 +473,11 @@ impl MemmyGenerator{
                     //Get the position of the name
                     let name_pos = match chunk.read_pos(){
                         Ok(pos) => pos,
-                        Err(_) => {
-                            return Err(())
+                        Err(msg) => {
+                            let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                                .message(msg)
+                                .build();
+                            return Err(diagnosis)
                         }
                     };
                     //Mutable flag
@@ -382,16 +485,19 @@ impl MemmyGenerator{
                     chunk.advance();
                     let mut_pos = match chunk.read_pos(){
                         Ok(pos) => pos,
-                        Err(_) => {
-                            return Err(())
+                        Err(msg) => {
+                            let diagnosis = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
+                                .message(msg)
+                                .build();
+                            return Err(diagnosis)
                         }
                     };
                     //Determine the size of the object being allocated
-                    let size = if let Some(size) = self.determine_alloc_size(chunk){
-                        size
-                    }else{
-                        self.emit_error("Failed to determine size of property object.".to_string(), var_pos)?;
-                        return Err(())
+                    let size = match self.determine_alloc_size(chunk){
+                        Ok(size) => size,
+                        Err(diag) => {
+                            return Err(diag)
+                        }
                     };
                     
                     preallocs.write_str(name.clone().as_str());
@@ -423,28 +529,35 @@ impl MemmyGenerator{
     }
 
     #[allow(dead_code)]
-    fn check_and_sort(&mut self) -> Result<(),()>{
+    fn check_and_sort(&mut self) -> Result<(),DiagnosticSource>{
         loop{
             let mut chunk = if let Ok(Some(chunk)) = self.typeck_rx.recv(){
                 chunk
             }else{
                 break
             };
-            let mir = self.hir_2_mir(&mut chunk).unwrap();
+            let mir = match self.hir_2_mir(&mut chunk){
+                Ok(mir) => mir,
+                Err(diag) => {
+                    return Err(diag)
+                }
+            };
             self.final_chunk.write_chunk(mir);
         }
         self.mir_tx.send(Some(self.final_chunk.clone())).unwrap();
         Ok(())
     }
 
-    pub fn start(module_name: String, mir_tx: Sender<Option<Chunk>>, notice_tx: Sender<Option<Notice>>, typeck_rx: Receiver<Option<Chunk>>) -> Result<(),()>{
+    pub fn start(module_name: String, mir_tx: Sender<Option<Chunk>>, notice_tx: Sender<Option<Diagnostic>>, typeck_rx: Receiver<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Receiver<ModuleMessage>) -> Result<(),()>{
         let memmy = Self{
             module_name,
             symbol_table: Vec::new(),
             mir_tx,
-            notice_tx,
+            notice_tx: notice_tx.clone(),
             typeck_rx,
             final_chunk: Chunk::new(),
+            master_tx,
+            master_rx
         };
         let mut statements = vec![];
         loop{
@@ -455,7 +568,14 @@ impl MemmyGenerator{
             };
             let statement = match statements::Statement::load(&chunk, &memmy){
                 Ok(statement) => statement,
-                Err(()) => return Err(())
+                Err(diag) => {
+                    let diagnostic = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                        .add_source(diag)
+                        .message(format!("An error occurred during memory analysis"))
+                        .build();
+                    notice_tx.send(Some(diagnostic)).unwrap();
+                    return Err(())
+                }
             };
             statements.push(statement);
         }

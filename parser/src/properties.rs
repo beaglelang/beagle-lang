@@ -19,14 +19,14 @@ use ir::{
 use ir_traits::WriteInstruction;
 
 use notices::{
-    NoticeLevel,
-    Notice
+    DiagnosticSourceBuilder,
+    DiagnosticLevel,
 };
 
 pub struct PropertyParser;
 
 impl ParseRule for PropertyParser{
-    fn parse(parser: &mut Parser) -> Result<(),Notice>{
+    fn parse(parser: &mut Parser) -> Result<(),()>{
         let mut chunk = Chunk::new();
         chunk.write_instruction(HIRInstruction::Property);
         let lpos = parser.current_token().pos;
@@ -37,14 +37,21 @@ impl ParseRule for PropertyParser{
                     "Expected a val or var keyword token, but instead got {}",
                     parser.current_token()
                 );
-                return Err(Notice::new(
-                    format!("Property Parser"),
-                    message,
-                    Some(parser.name.clone()),
-                    Some(parser.current_token().pos),
-                    NoticeLevel::Error,
-                    vec![]
-                ));
+                let source = match parser.request_source_snippet(){
+                    Ok(source) => source,
+                    Err(diag) => {
+                        parser.emit_parse_diagnostic(&[], &[diag]);
+                        return Err(())
+                    }
+                };
+                let diag_source = DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
+                    .level(DiagnosticLevel::Error)
+                    .message(message)
+                    .range(parser.current_token().pos.col_range())
+                    .source(source)
+                    .build();
+                parser.emit_parse_diagnostic(&[], &[diag_source]);
+                return Err(());
             }
             true
         }else{
@@ -58,83 +65,125 @@ impl ParseRule for PropertyParser{
                 "Expected an identifier token, but instead got {}",
                 parser.current_token()
             );
-            return Err(Notice::new(
-                format!("Property Parser"),
-                message,
-                Some(parser.name.clone()),
-                Some(parser.current_token().pos),
-                NoticeLevel::Error,
-                vec![]
-            ));
+            let source = match parser.request_source_snippet(){
+                Ok(source) => source,
+                Err(diag) => {
+                    parser.emit_parse_diagnostic(&[], &[diag]);
+                    return Err(())
+                }
+            };
+            let diag_source = DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
+                .level(DiagnosticLevel::Error)
+                .message(message)
+                .range(parser.current_token().pos.col_range())
+                .source(source)
+                .build();
+            parser.emit_parse_diagnostic(&[], &[diag_source]);
+            return Err(());
         }
         let name = match &parser.current_token().data {
             TokenData::String(s) => (*s).to_string(),
             _ => {
-                parser.emit_notice(
-                    lpos,
-                    NoticeLevel::Error,
-                    "Failed to extract string data from identifier token.".to_string(),
+               let message = format!(
+                    "Failed to extract string data from identifier token.",
                 );
-                return Err(Notice::new(
-                    format!("Property Parser"),
-                    format!("Failed to extract string data from identifier token."),
-                    Some(parser.name.clone()),
-                    Some(parser.current_token().pos),
-                    NoticeLevel::Error,
-                    vec![]
-                ));
+                let source = match parser.request_source_snippet(){
+                    Ok(source) => source,
+                    Err(diag) => {
+                        parser.emit_parse_diagnostic(&[], &[diag]);
+                        return Err(())
+                    }
+                };
+                let diag_source = DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
+                    .level(DiagnosticLevel::Error)
+                    .message(message)
+                    .range(parser.current_token().pos.col_range())
+                    .source(source)
+                    .build();
+                parser.emit_parse_diagnostic(&[], &[diag_source]);
+                return Err(());
             }
         };
 
         chunk.write_pos(parser.current_token().pos);
         chunk.write_string(name.clone());
-        if parser.check_consume_next(TokenType::Colon) {
-            if let Ok(t) = TypeParser::get_type(parser){
-                chunk.write_chunk(t);
-            }else{
-                return Err(Notice::new(
-                    format!("Property Parser"),
-                    format!("Could not create type signature for property."),
-                    Some(parser.name.clone()),
-                    Some(parser.current_token().pos),
-                    NoticeLevel::Error,
-                    vec![]
-                ));
+        match parser.check_consume_next(TokenType::Colon) {
+            Ok(true) => {
+                match TypeParser::get_type(parser){
+                    Ok(t) =>chunk.write_chunk(t),
+                    Err(diag) => {
+                        let message = format!(
+                            "Could not parse type signature for property.",
+                        );
+                        let source = match parser.request_source_snippet(){
+                            Ok(source) => source,
+                            Err(diag) => {
+                                parser.emit_parse_diagnostic(&[], &[diag]);
+                                return Err(())
+                            }
+                        };
+                        let diag_source = DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
+                            .level(DiagnosticLevel::Error)
+                            .message(message)
+                            .range(parser.current_token().pos.col_range())
+                            .source(source)
+                            .build();
+                        parser.emit_parse_diagnostic(&[], &[diag, diag_source]);
+                        return Err(());
+                    }
+                }
+                if let Err(diag_source) = parser.advance(){
+                    parser.emit_parse_diagnostic(&[], &[diag_source]);
+                    return Err(());
+                };
             }
-            if let Err(notice) = parser.advance(){
-                return Err(notice);
-            };
-        } else {
-            if let Err(notice) = parser.advance(){
-                return Err(notice);
-            };
-            chunk.write_instruction(HIRInstruction::Unknown);
-        };
+            Ok(false) => {
+                if let Err(diag_source) = parser.advance(){
+                    parser.emit_parse_diagnostic(&[], &[diag_source]);
+                    return Err(());
+                };
+                chunk.write_instruction(HIRInstruction::Unknown);
+            }
+            Err(diag) => {
+                parser.emit_parse_diagnostic(&[], &[diag]);
+                return Err(())
+            }
+        }
 
         if let Ok(false) = parser.check_consume(TokenType::Equal) {
             let found_token = parser.current_token();
-            let data = match &found_token.data {
-                TokenData::Float(f) => f.to_string(),
-                TokenData::Integer(i) => i.to_string(),
-                TokenData::String(s) => s.clone(),
-                _ => "Unknown".to_string(),
+            let data = &found_token.data;
+            let cause_message = format!("Expected '=' but instead got {:?}", data);
+            let cause_source = match parser.request_source_snippet(){
+                Ok(source) => source,
+                Err(diag) => {
+                    parser.emit_parse_diagnostic(&[], &[diag]);
+                    return Err(())
+                }
             };
-            let cause = Notice::new(
-                format!("Property Parser"),
-                format!("Expected '=' but instead got {:?}", data),
-                Some(parser.name.clone()),
-                Some(parser.current_token().pos),
-                NoticeLevel::Error,
-                vec![]
-            );
-            return Err(Notice::new(
-                format!("Property Parser"),
-                format!("Property must be initialized."),
-                Some(parser.name.clone()),
-                Some(parser.current_token().pos),
-                NoticeLevel::Error,
-                vec![cause]
-            ));
+            let cause_diag_source = DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
+                .level(DiagnosticLevel::Error)
+                .message(cause_message)
+                .range(parser.current_token().pos.col_range())
+                .source(cause_source)
+                .build();
+
+            let message = format!("Property must be initialized");
+            let source = match parser.request_source_snippet(){
+                Ok(source) => source,
+                Err(diag) => {
+                    parser.emit_parse_diagnostic(&[], &[diag]);
+                    return Err(())
+                }
+            };
+            let diag_source = DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
+                .level(DiagnosticLevel::Error)
+                .message(message)
+                .range(parser.current_token().pos.col_range())
+                .source(source)
+                .build();
+            parser.emit_parse_diagnostic(&[], &[cause_diag_source, diag_source]);
+            return Err(());
         }
 
         parser.emit_ir_whole(chunk);
@@ -144,7 +193,8 @@ impl ParseRule for PropertyParser{
                 parser.emit_ir_whole(expr);
             }
             Err(msg) => {
-                return Err(msg);
+                parser.emit_parse_diagnostic(&[], &[msg]);
+                return Err(());
             }
         }
         parser.advance().unwrap();

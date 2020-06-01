@@ -11,14 +11,10 @@ use lexer::tokens::{
 mod local_var;
 use local_var::LocalVarParser;
 
-use notices::{
-    Notice,
-};
-
 pub struct LocalStatementParser;
 
 impl ParseRule for LocalStatementParser{
-    fn parse(parser: &mut Parser) -> Result<(),Notice>{
+    fn parse(parser: &mut Parser) -> Result<(),()>{
         match parser.current_token().type_{
             TokenType::RCurly => return Ok(()),
             TokenType::KwLet => LocalVarParser::parse(parser)?,
