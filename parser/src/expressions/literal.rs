@@ -64,7 +64,7 @@ impl OwnedParse for LiteralParser{
                 chunk.write_bool(false);
             }
             _ => {
-                let source = match parser.request_source_snippet(){
+                let source = match parser.request_source_snippet(token.pos){
                     Ok(source) => source,
                     Err(diag_source) => {
                         return Err(diag_source)

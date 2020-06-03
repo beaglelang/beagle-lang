@@ -30,7 +30,7 @@ impl ParseRule for ModuleParser{
         if let Ok(TokenData::String(ident)) = parser.consume(TokenType::Identifier) {
             chunk.write_string(ident.clone());
         }else{
-            let source = match parser.request_source_snippet(){
+            let source = match parser.request_source_snippet(parser.current_token().pos){
                 Ok(source) => source,
                 Err(diag_source) => {
                     parser.emit_parse_diagnostic(&[], &[diag_source]);

@@ -42,7 +42,7 @@ impl TypeParser{
                 chunk
             }
             _ => {
-                let source = match parser.request_source_snippet(){
+                let source = match parser.request_source_snippet(current_token.pos){
                     Ok(source) => source,
                     Err(diag) => {
                         return Err(diag)

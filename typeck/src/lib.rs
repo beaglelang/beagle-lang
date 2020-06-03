@@ -83,26 +83,22 @@ pub trait Unload{
 pub struct TypeckManager{
     ///The threadpool of typeck instances. This is populated by [enqueueModule].
     thread_pool: ThreadPool,
-    ///A global copy of a notice sender channel that all typeck's are given clones of.
-    notice_tx: Sender<Option<Diagnostic>>,
 }
 
 impl TypeckManager{
     ///Create a new typeck manager with the given notice sender channel.
-    pub fn new(notice_tx: Sender<Option<Diagnostic>>) -> Self{
+    pub fn new() -> Self{
         TypeckManager{
             thread_pool: ThreadPool::new().unwrap(),
-            notice_tx,
         }
     }
 
     ///Enqueue a module for being type checked in parallel to other stages. See [Driver] for more info.
     ///This will spawn a new task/thread in thread_pool which executes [Typeck::start_checking].
-    pub fn enqueue_module(&self, module_name: String, hir_rx: Receiver<Option<Chunk>>, typeck_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
-        let notice_tx_clone = self.notice_tx.clone();
+    pub fn enqueue_module(&self, module_name: String, diagnostics_tx: Sender<Option<Diagnostic>>, hir_rx: Receiver<Option<Chunk>>, typeck_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
         let module_name_clone = module_name.clone();
         self.thread_pool.spawn_ok(async move{
-            let _ = Typeck::start_checking(module_name_clone.clone(), hir_rx, typeck_tx, master_tx, master_rx, notice_tx_clone.clone());
+            let _ = Typeck::start_checking(module_name_clone.clone(), hir_rx, typeck_tx, master_tx, master_rx, diagnostics_tx);
         });
     }
 }

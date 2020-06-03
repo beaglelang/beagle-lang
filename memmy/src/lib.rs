@@ -63,26 +63,22 @@ struct MemmyElement{
 pub struct MemmyManager{
     ///The threadpool of typeck instances. This is populated by [enqueueModule].
     thread_pool: ThreadPool,
-    ///A global copy of a notice sender channel that all typeck's are given clones of.
-    notice_tx: Sender<Option<Diagnostic>>,
 }
 
 impl MemmyManager{
     ///Create a new memmy manager with the given notice sender channel.
-    pub fn new(notice_tx: Sender<Option<Diagnostic>>) -> Self{
+    pub fn new() -> Self{
         MemmyManager{
             thread_pool: ThreadPool::new().unwrap(),
-            notice_tx,
         }
     }
 
     ///Enqueue a module for being type checked in parallel to other stages. See [Driver] for more info.
     ///This will spawn a new task/thread in thread_pool which executes [Typeck::start_checking].
-    pub fn enqueue_module(&self, module_name: String, typeck_rx: Receiver<Option<Chunk>>, mir_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
-        let notice_tx_clone = self.notice_tx.clone();
+    pub fn enqueue_module(&self, module_name: String, diagnostics_tx: Sender<Option<Diagnostic>>, typeck_rx: Receiver<Option<Chunk>>, mir_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
         let module_name_clone = module_name.clone();
         self.thread_pool.spawn_ok(async move{
-            let typeck = MemmyGenerator::start(module_name_clone.clone(), mir_tx, notice_tx_clone.clone(), typeck_rx, master_tx, master_rx);
+            let typeck = MemmyGenerator::start(module_name_clone.clone(), mir_tx, diagnostics_tx, typeck_rx, master_tx, master_rx);
             if let Err(()) = typeck{
                 return
             };

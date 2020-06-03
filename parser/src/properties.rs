@@ -37,7 +37,7 @@ impl ParseRule for PropertyParser{
                     "Expected a val or var keyword token, but instead got {}",
                     parser.current_token()
                 );
-                let source = match parser.request_source_snippet(){
+                let source = match parser.request_source_snippet(lpos){
                     Ok(source) => source,
                     Err(diag) => {
                         parser.emit_parse_diagnostic(&[], &[diag]);
@@ -65,7 +65,7 @@ impl ParseRule for PropertyParser{
                 "Expected an identifier token, but instead got {}",
                 parser.current_token()
             );
-            let source = match parser.request_source_snippet(){
+            let source = match parser.request_source_snippet(parser.current_token().pos){
                 Ok(source) => source,
                 Err(diag) => {
                     parser.emit_parse_diagnostic(&[], &[diag]);
@@ -87,7 +87,7 @@ impl ParseRule for PropertyParser{
                let message = format!(
                     "Failed to extract string data from identifier token.",
                 );
-                let source = match parser.request_source_snippet(){
+                let source = match parser.request_source_snippet(parser.current_token().pos){
                     Ok(source) => source,
                     Err(diag) => {
                         parser.emit_parse_diagnostic(&[], &[diag]);
@@ -115,7 +115,7 @@ impl ParseRule for PropertyParser{
                         let message = format!(
                             "Could not parse type signature for property.",
                         );
-                        let source = match parser.request_source_snippet(){
+                        let source = match parser.request_source_snippet(parser.current_token().pos){
                             Ok(source) => source,
                             Err(diag) => {
                                 parser.emit_parse_diagnostic(&[], &[diag]);
@@ -154,7 +154,7 @@ impl ParseRule for PropertyParser{
             let found_token = parser.current_token();
             let data = &found_token.data;
             let cause_message = format!("Expected '=' but instead got {:?}", data);
-            let cause_source = match parser.request_source_snippet(){
+            let cause_source = match parser.request_source_snippet(found_token.pos){
                 Ok(source) => source,
                 Err(diag) => {
                     parser.emit_parse_diagnostic(&[], &[diag]);
@@ -169,7 +169,7 @@ impl ParseRule for PropertyParser{
                 .build();
 
             let message = format!("Property must be initialized");
-            let source = match parser.request_source_snippet(){
+            let source = match parser.request_source_snippet(found_token.pos){
                 Ok(source) => source,
                 Err(diag) => {
                     parser.emit_parse_diagnostic(&[], &[diag]);

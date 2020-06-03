@@ -32,7 +32,7 @@ impl ParseRule for LocalVarParser{
     fn parse(parser: &mut Parser) -> Result<(),()>{
         let mut chunk = Chunk::new();
         if parser.context != ParseContext::Local{
-            let source = match parser.request_source_snippet(){
+            let source = match parser.request_source_snippet(parser.current_token().pos){
                 Ok(source) => source,
                 Err(diag) => {
                     parser.emit_parse_diagnostic(&[], &[diag]);
@@ -51,7 +51,7 @@ impl ParseRule for LocalVarParser{
         match parser.check_consume(TokenType::KwLet){
             Ok(true) => {},
             Ok(false) => {
-                let source = match parser.request_source_snippet(){
+                let source = match parser.request_source_snippet(parser.current_token().pos){
                     Ok(source) => source,
                     Err(diag) => {
                         parser.emit_parse_diagnostic(&[], &[diag]);
@@ -93,7 +93,7 @@ impl ParseRule for LocalVarParser{
                 "Expected an identifier token, but instead got {}",
                 parser.current_token()
             );
-            let source = match parser.request_source_snippet(){
+            let source = match parser.request_source_snippet(parser.current_token().pos){
                 Ok(source) => source,
                 Err(diag) => {
                     parser.emit_parse_diagnostic(&[], &[diag]);
@@ -114,7 +114,7 @@ impl ParseRule for LocalVarParser{
                let message = format!(
                     "Failed to extract string data from identifier token.",
                 );
-                let source = match parser.request_source_snippet(){
+                let source = match parser.request_source_snippet(parser.current_token().pos){
                     Ok(source) => source,
                     Err(diag) => {
                         parser.emit_parse_diagnostic(&[], &[diag]);
@@ -140,7 +140,7 @@ impl ParseRule for LocalVarParser{
                     let message = format!(
                         "Could not parse type signature for property.",
                     );
-                    let source = match parser.request_source_snippet(){
+                    let source = match parser.request_source_snippet(parser.current_token().pos){
                         Ok(source) => source,
                         Err(diag) => {
                             parser.emit_parse_diagnostic(&[], &[diag]);
@@ -171,7 +171,7 @@ impl ParseRule for LocalVarParser{
             let found_token = parser.current_token();
             let data = &found_token.data;
             let cause_message = format!("Expected '=' but instead got {:?}", data);
-            let cause_source = match parser.request_source_snippet(){
+            let cause_source = match parser.request_source_snippet(found_token.pos){
                 Ok(source) => source,
                 Err(diag) => {
                     parser.emit_parse_diagnostic(&[], &[diag]);
@@ -186,7 +186,7 @@ impl ParseRule for LocalVarParser{
                 .build();
 
             let message = format!("Local must be initialized");
-            let source = match parser.request_source_snippet(){
+            let source = match parser.request_source_snippet(found_token.pos){
                 Ok(source) => source,
                 Err(diag) => {
                     parser.emit_parse_diagnostic(&[], &[diag]);

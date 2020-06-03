@@ -31,7 +31,7 @@ impl ParseRule for FunctionParser{
                 "Expected a fun keyword token, but instead got {}",
                 parser.current_token()
             );
-            let source = match parser.request_source_snippet(){
+            let source = match parser.request_source_snippet(lpos){
                 Ok(source) => {
                     DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
                         .message(message)
@@ -59,7 +59,7 @@ impl ParseRule for FunctionParser{
                 "Expected an identifier token, but instead got {}",
                 parser.current_token()
             );
-            let source = match parser.request_source_snippet(){
+            let source = match parser.request_source_snippet(parser.current_token().pos){
                 Ok(source) => {
                     DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
                         .message(message)
@@ -83,7 +83,7 @@ impl ParseRule for FunctionParser{
         let name = match &parser.current_token().data {
             TokenData::String(s) => (*s).to_string(),
             _ => {
-                let source = match parser.request_source_snippet(){
+                let source = match parser.request_source_snippet(parser.current_token().pos){
                     Ok(source) => {
                         DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
                             .message(format!("Failed to extract string data from identifier token."))
@@ -130,7 +130,7 @@ impl ParseRule for FunctionParser{
                 let param_name = match parser.consume(TokenType::Identifier) {
                     Ok(TokenData::String(s)) => (*s).to_string(),
                     Ok(_) => {
-                        let source = match parser.request_source_snippet(){
+                        let source = match parser.request_source_snippet(loc){
                             Ok(source) => {
                                 DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
                                     .message(format!("Failed to extract string data from identifier token."))

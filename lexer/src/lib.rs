@@ -32,26 +32,23 @@ lazy_static! {
 
 pub struct LexerManager{
     thread_pool: ThreadPool,
-    notice_tx: Arc<Mutex<Sender<Option<Diagnostic>>>>,
 }
 
 impl LexerManager{
-    pub fn new(notice_tx: Sender<Option<Diagnostic>>) -> Self{
+    pub fn new() -> Self{
         LexerManager{
             thread_pool: ThreadPool::new().unwrap(),
-            notice_tx: Arc::new(Mutex::new(notice_tx))
         }
     }
 
-    pub fn enqueue_module(&self, module_name: String, input: String, parser_tx: Sender<LexerToken>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
-        let notice_tx_clone = self.notice_tx.clone();
+    pub fn enqueue_module(&self, module_name: String, input: String, diagnostics_tx: Sender<Option<Diagnostic>>, parser_tx: Sender<LexerToken>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
         let parser_tx_clone = parser_tx.clone();
         let input_clone = input.clone();
         self.thread_pool.spawn_ok(async move{
-            let mut lexer = Lexer::new(module_name.clone(), input_clone, Arc::new(Mutex::new(parser_tx_clone)), master_tx, master_rx);
+            let mut lexer = Lexer::new(module_name.clone(), input_clone, parser_tx_clone, master_tx, master_rx);
             let tokenizer_result = lexer.start_tokenizing();
             if let Err(notice) = tokenizer_result{
-                notice_tx_clone.lock().expect("Failed to acquire lock on notice sender.").send(Some(notice)).unwrap();
+                diagnostics_tx.send(Some(notice)).unwrap();
             };
         });
     }
@@ -64,7 +61,7 @@ pub struct Lexer {
     char_idx: usize,
     current_pos: BiPos,
 
-    pub token_sender: Arc<Mutex<Sender<tokens::LexerToken>>>,
+    pub token_sender: Sender<tokens::LexerToken>,
     master_tx: Sender<ModuleMessage>,
     master_rx: Arc<Mutex<Receiver<ModuleMessage>>>,
 }
@@ -73,7 +70,7 @@ impl<'a, 'b> Lexer{
     pub fn new(
         module_name: String,
         input: String,
-        token_tx: Arc<Mutex<Sender<LexerToken>>>,
+        token_tx: Sender<LexerToken>,
         master_tx: Sender<ModuleMessage>,
         master_rx: Arc<Mutex<Receiver<ModuleMessage>>>,
     ) -> Box<Lexer> {
@@ -107,6 +104,7 @@ impl<'a, 'b> Lexer{
                     }
                     Some(_) => {
                         self.current_pos.next_col_end();
+                        self.current_pos.offset.0 += 1;
                     }
                     _ => return new_c,
                 }
@@ -389,15 +387,13 @@ impl<'a, 'b> Lexer{
     }
 
     pub fn start_tokenizing(&mut self) -> std::result::Result<(), Diagnostic> {
-        let token_sender_clone = self.token_sender.clone();
-        let guard = token_sender_clone.lock().unwrap();
         loop {
             let token = self.get_token();
             match token {
                 Ok(Some(t)) => {
                     // self.advance();
                     // println!("{}", t.clone());
-                    match guard.send(t.clone()){
+                    match self.token_sender.send(t.clone()){
                         Ok(()) => {
                             match &t.type_ {
                                 tokens::TokenType::Eof => {

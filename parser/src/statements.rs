@@ -26,7 +26,7 @@ impl ParseRule for StatementParser{
             TokenType::KwVar => PropertyParser::parse(parser)?,
             TokenType::KwFun => FunctionParser::parse(parser)?,
             _ => {
-                let source = match parser.request_source_snippet(){
+                let source = match parser.request_source_snippet(token.pos){
                     Ok(source) => source,
                     Err(diag) => {
                         parser.emit_parse_diagnostic(&[], &[diag]);

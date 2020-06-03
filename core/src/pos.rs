@@ -47,16 +47,21 @@ impl BiPos {
         self.start.0 += 1;
         self.start.1 = 0;
         self.end = self.start;
+        self.offset.1 += 1;
+        self.offset.0 = self.offset.1;
     }
 
     pub fn next_col(&mut self) {
         self.start = self.end;
         self.start.1 += 1;
         self.end.1 += 1;
+        self.offset.1 += 1;
+        self.offset.0 = self.offset.1;
     }
 
     pub fn next_col_end(&mut self) {
         self.end.1 += 1;
+        self.offset.1 += 1;
     }
 
     pub fn range_to(&self, other: &BiPos) -> Self{

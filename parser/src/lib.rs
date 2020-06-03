@@ -6,8 +6,6 @@ mod expressions;
 mod type_;
 mod local_statements;
 
-
-
 use lexer::tokens::{LexerToken, TokenData, TokenType};
 
 use std::sync::mpsc::{Receiver, Sender};
@@ -15,7 +13,6 @@ use std::sync::mpsc::{Receiver, Sender};
 use ir::{
     Chunk,
 };
-
 
 use std::sync::{Arc, Mutex};
 
@@ -26,6 +23,8 @@ use notices::{
 use futures::executor::ThreadPool;
 
 use module_messages::ModuleMessage;
+
+use core::pos::BiPos;
 
 ///A parse rule, which emits a chunk upon completion. Returns a notice upon error.
 pub trait ParseRule{
@@ -49,21 +48,18 @@ pub enum ParseContext{
 
 pub struct ParseManager{
     thread_pool: ThreadPool,
-    notice_tx: Arc<Mutex<Sender<Option<Diagnostic>>>>,
 }
 
 impl ParseManager{
-    pub fn new(notice_tx: Sender<Option<Diagnostic>>) -> Self{
+    pub fn new() -> Self{
         ParseManager{
             thread_pool: ThreadPool::new().unwrap(),
-            notice_tx: Arc::new(Mutex::new(notice_tx)),
         }
     }
 
-    pub fn enqueue_module(&self, module_name: String, token_rx: Receiver<LexerToken>, hir_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
-        let notice_tx_clone = self.notice_tx.lock().unwrap().clone();
+    pub fn enqueue_module(&self, module_name: String, diagnostics_tx: Sender<Option<Diagnostic>>, token_rx: Receiver<LexerToken>, hir_tx: Sender<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>){
         self.thread_pool.spawn_ok(async move{
-            let _ = Parser::parse(module_name.clone(), hir_tx, token_rx, notice_tx_clone.clone(), master_tx, master_rx);
+            let _ = Parser::parse(module_name.clone(), hir_tx, token_rx, diagnostics_tx, master_tx, master_rx);
         });
     }
 }
@@ -105,8 +101,8 @@ impl Parser {
         }
     }
 
-    pub fn request_source_snippet(&self) -> Result<String, DiagnosticSource>{
-        if let Err(_) = self.master_tx.send(ModuleMessage::SourceRequest(self.current_token().pos)){
+    pub fn request_source_snippet(&self, pos: BiPos) -> Result<String, DiagnosticSource>{
+        if let Err(_) = self.master_tx.send(ModuleMessage::SourceRequest(pos)){
             let diag = DiagnosticSourceBuilder::new(self.name.clone(), 0)
                 .level(DiagnosticLevel::Error)
                 .message(format!("The master channel was closed??"))
@@ -116,20 +112,22 @@ impl Parser {
         let master_rx_lock = match self.master_rx.lock(){
             Ok(lock ) => lock,
             Err(err) => {
-                return Err(DiagnosticSourceBuilder::new(self.name.clone(), self.current_token().pos.start.0)
+                return Err(DiagnosticSourceBuilder::new(self.name.clone(), pos.start.0)
                     .level(DiagnosticLevel::Error)
                     .message(err.to_string())
                     .build());
             }
         };
         return match master_rx_lock.recv(){
-            Ok(ModuleMessage::SourceResponse(source_snip)) => Ok(source_snip),
-            Ok(thing) => Err(DiagnosticSourceBuilder::new(self.name.clone(), self.current_token().pos.start.0)
+            Ok(ModuleMessage::SourceResponse(source_snip)) => {
+                Ok(source_snip)
+            },
+            Ok(thing) => Err(DiagnosticSourceBuilder::new(self.name.clone(), pos.start.0)
             .level(DiagnosticLevel::Error)
             .message(format!("Not sure what we got but we shouldn't have: {:?}", thing))
             .build()),
             Err(_) => {
-                Err(DiagnosticSourceBuilder::new(self.name.clone(), self.current_token().pos.start.0)
+                Err(DiagnosticSourceBuilder::new(self.name.clone(), pos.start.0)
                     .level(DiagnosticLevel::Error)
                     .message(format!("The master channel was closed??"))
                     .build())
@@ -225,7 +223,7 @@ impl Parser {
         if self.check(type_) {
             Ok(&self.current_token().data)
         } else {
-            let source = match self.request_source_snippet(){
+            let source = match self.request_source_snippet(self.current_token().pos){
                 Ok(source) => source,
                 Err(diag) => return Err(diag)
             };
