@@ -24,6 +24,8 @@ pub struct BiPos {
     pub start: Position,
     pub end: Position,
     pub offset: Position,
+    ///This is a region in source code where the previous line and the next line are memoized for source snipping purposes
+    pub line_region: Position
 }
 
 impl std::fmt::Display for BiPos {
@@ -37,7 +39,8 @@ impl Default for BiPos {
         Self {
             start: Position::default(),
             end: Position::default(),
-            offset: Position::default()
+            offset: Position::default(),
+            line_region: Position(0, 2)
         }
     }
 }
@@ -49,19 +52,31 @@ impl BiPos {
         self.end = self.start;
         self.offset.1 += 1;
         self.offset.0 = self.offset.1;
+        self.line_region.0 += 1;
+        self.line_region.1 += 1;
     }
 
     pub fn next_col(&mut self) {
         self.start = self.end;
         self.start.1 += 1;
         self.end.1 += 1;
-        self.offset.1 += 1;
         self.offset.0 = self.offset.1;
+        self.offset.0 += 1;
+        self.offset.1 += 1;
     }
 
     pub fn next_col_end(&mut self) {
         self.end.1 += 1;
         self.offset.1 += 1;
+    }
+
+    pub fn meet(&self, other: &BiPos) -> Self{
+        BiPos{
+            start: self.start,
+            end: other.end,
+            offset: Position(self.offset.0, other.offset.1),
+            line_region: Position(self.line_region.0, other.line_region.1)
+        }
     }
 
     pub fn range_to(&self, other: &BiPos) -> Self{
@@ -70,7 +85,8 @@ impl BiPos {
         BiPos{
             start,
             end,
-            offset: Position(self.offset.0, other.offset.1)
+            offset: Position(self.offset.0, other.offset.1),
+            line_region: Position(self.line_region.0, other.line_region.1)
         }
     }
 

@@ -86,6 +86,8 @@ impl Chunk{
         self.write_usize(bipos.end.1);
         self.write_usize(bipos.offset.0);
         self.write_usize(bipos.offset.1);
+        self.write_usize(bipos.line_region.0);
+        self.write_usize(bipos.line_region.1);
     }
 
     pub fn read_pos(&self) -> Result<BiPos, String>{
@@ -113,10 +115,19 @@ impl Chunk{
             Ok(offset_end) => offset_end,
             Err(msg) => return Err(msg)
         };
+        let line_region_start = match self.read_usize(){
+            Ok(line_region_start) => line_region_start,
+            Err(msg) => return Err(msg)
+        };
+        let line_region_end = match self.read_usize(){
+            Ok(line_region_end) => line_region_end,
+            Err(msg) => return Err(msg)
+        };
         Ok(BiPos{
             start: Position(start_line, start_col),
             end: Position(end_line, end_col),
-            offset: Position(offset_start, offset_end)
+            offset: Position(offset_start, offset_end),
+            line_region: Position(line_region_start, line_region_end)
         })
     }
 

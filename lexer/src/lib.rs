@@ -104,7 +104,6 @@ impl<'a, 'b> Lexer{
                     }
                     Some(_) => {
                         self.current_pos.next_col_end();
-                        self.current_pos.offset.0 += 1;
                     }
                     _ => return new_c,
                 }

@@ -179,7 +179,7 @@ impl ParseRule for PropertyParser{
             let diag_source = DiagnosticSourceBuilder::new(parser.name.clone(), parser.current_token().pos.start.0)
                 .level(DiagnosticLevel::Error)
                 .message(message)
-                .range(parser.current_token().pos.col_range())
+                .range(lpos.meet(&parser.current_token().pos).col_range())
                 .source(source)
                 .build();
             parser.emit_parse_diagnostic(&[], &[cause_diag_source, diag_source]);
