@@ -40,8 +40,8 @@ impl Load for Mutability{
 impl Unload for Mutability{
     fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
-        chunk.write_bool(self.mutable);
         chunk.write_pos(self.pos);
+        chunk.write_bool(self.mutable);
         Ok(chunk)
     }
 }

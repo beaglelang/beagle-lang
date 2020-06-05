@@ -1,13 +1,6 @@
-use core::pos::BiPos;
-
-use ir::{
-    Chunk,
-};
-
-
-use super::{
-    MemmyGenerator,
+use crate::{
     Load,
+    MemmyGenerator
 };
 
 use notices::{
@@ -15,14 +8,18 @@ use notices::{
     DiagnosticLevel
 };
 
-#[derive(Debug, Clone)]
-pub struct Identifier{
-    pub ident: String,
-    pub pos: BiPos
-}
+use ty::Ty;
 
-impl Load for Identifier{
-    type Output = Identifier;
+use ir::{
+    Chunk,
+    hir::HIRInstruction
+};
+
+use ir_traits::ReadInstruction;
+
+impl Load for Ty{
+    type Output = Ty;
+
     fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
@@ -35,10 +32,13 @@ impl Load for Identifier{
                 return Err(())
             }
         };
-        let ident = chunk.read_string();
-        return Ok(Identifier{
-            ident: ident.to_owned(),
-            pos
-        })
+        let _ins = chunk.read_instruction() as Option<HIRInstruction>;
+        let ident = chunk.read_string().to_owned();
+        Ok(
+            Ty{
+                pos,
+                ident
+            }
+        )
     }
 }

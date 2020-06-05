@@ -11,8 +11,6 @@ use ir::{
 
 use ir_traits::{ WriteInstruction, ReadInstruction };
 
-use core::pos::BiPos;
-
 use ty::{
     Ty,
     TyValueElement,
@@ -31,9 +29,7 @@ pub trait Inference{
 impl Unload for Ty{
     fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
-        if self.pos != BiPos::default(){
-            chunk.write_pos(self.pos);
-        }
+        chunk.write_pos(self.pos);
         match self.ident.clone().as_str(){
             "Int" => chunk.write_instruction(HIRInstruction::Integer),
             "Float" => chunk.write_instruction(HIRInstruction::Float),

@@ -38,6 +38,7 @@ impl Unload for FunParam{
             Ok(ch) => chunk.write_chunk(ch),
             Err(notice) => return Err(notice)
         }
+
         match self.ty.unload(){
             Ok(ch) => chunk.write_chunk(ch),
             Err(notice) => return Err(notice)
@@ -236,6 +237,7 @@ impl Unload for Fun{
                 Err(notice) => return Err(notice)
             }
         }
+        chunk.write_instruction(HIRInstruction::EndParams);
         //Write the return type information
         match self.ty.unload(){
             Ok(ch) => chunk.write_chunk(ch),

@@ -88,7 +88,11 @@ impl Driver {
 
         let master_communication = thread::spawn(move ||{
             while let Ok(ModuleMessage::SourceRequest(pos)) = master_in_rx.recv(){
-                let source = instr.clone().lines().skip(pos.line_region.0).take(pos.line_region.1 - pos.line_region.0).collect();
+                let source = instr.clone()
+                    .lines()
+                    .skip(pos.line_region.0)
+                    .take(pos.line_region.1 - pos.line_region.0)
+                    .collect();
                 master_out_tx.send(ModuleMessage::SourceResponse(source)).unwrap();
             }
         });

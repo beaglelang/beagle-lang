@@ -13,7 +13,6 @@ use ir::{
 use ir_traits::ReadInstruction;
 
 use notices::{
-    DiagnosticSource,
     DiagnosticSourceBuilder,
     DiagnosticLevel
 };
@@ -54,7 +53,7 @@ pub struct Expression{
 impl Load for Expression{
     type Output = Expression;
 
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource> {
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
@@ -62,7 +61,8 @@ impl Load for Expression{
                     .message(msg)
                     .level(DiagnosticLevel::Error)
                     .build();
-                return Err(diagnosis)
+                memmy.emit_diagnostic(&[], &[diagnosis]);
+                return Err(())
             }
         };
 
@@ -160,7 +160,8 @@ impl Load for Expression{
                             .level(DiagnosticLevel::Error)
                             .range(pos.col_range())
                             .build();
-                return Err(diagnosis)
+                memmy.emit_diagnostic(&[], &[diagnosis]);
+                return Err(())
             }
         }
     }

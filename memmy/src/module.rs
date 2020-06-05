@@ -9,22 +9,18 @@ use core::pos::BiPos;
 
 use ir::{ Chunk };
 
-use notices::{
-    DiagnosticSource,
-};
-
 #[allow(dead_code)]
-pub struct Module{
+pub struct Module<'a>{
     ident: Identifier,
-    statements: Vec<Statement>,
+    statements: Vec<Statement<'a>>,
     pos: BiPos,
 }
 
-impl Load for Module{
-    type Output = Module;
+impl<'a> Load for Module<'a>{
+    type Output = Module<'a>;
 
     #[allow(unused_variables)]
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource>{
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()>{
         unimplemented!()
     }
 }

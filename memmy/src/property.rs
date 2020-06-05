@@ -3,7 +3,8 @@ use super::{
     ident::Identifier,
     MemmyGenerator,
     expr::Expression,
-    Mutability
+    Mutability,
+    lifetime::ObjectLifetime
 };
 
 use core::pos::BiPos;
@@ -16,23 +17,23 @@ use ir::{
 use ir_traits::ReadInstruction;
 
 use notices::{
-    DiagnosticSource,
     DiagnosticSourceBuilder,
     DiagnosticLevel
 };
 
 #[derive(Debug, Clone)]
-pub struct Property{
+pub struct Property<'a>{
     ident: Identifier,
     typename: Identifier,
     pos: BiPos,
     mutable: Mutability,
     expression: Expression,
+    lifetime: ObjectLifetime<'a>
 }
 
-impl Load for Property{
-    type Output = Property;
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource> {
+impl<'a> Load for Property<'a>{
+    type Output = Property<'a>;
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
@@ -40,16 +41,16 @@ impl Load for Property{
                     .level(DiagnosticLevel::Error)
                     .message(msg)
                     .build();
-                return Err(diagnosis)
+                memmy.emit_diagnostic(&[], &[diagnosis]);
+                return Err(())
             }
         };
         let ident = match Identifier::load(chunk, memmy){
             Ok(pos) => pos,
-            Err(diag) => {
-                return Err(diag)
+            Err(()) => {
+                return Err(())
             }
         };
-        let mutable = chunk.read_bool();
         let mut_pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
@@ -57,9 +58,11 @@ impl Load for Property{
                     .level(DiagnosticLevel::Error)
                     .message(msg)
                     .build();
-                return Err(diagnosis)
+                memmy.emit_diagnostic(&[], &[diagnosis]);
+                return Err(())
             }
         };
+        let mutable = chunk.read_bool();
 
         let typename_pos = match chunk.read_pos(){
             Ok(pos) => pos,
@@ -68,7 +71,8 @@ impl Load for Property{
                     .level(DiagnosticLevel::Error)
                     .message(msg)
                     .build();
-                return Err(diagnosis)
+                memmy.emit_diagnostic(&[], &[diagnosis]);
+                return Err(())
             }
         };
 
@@ -80,7 +84,8 @@ impl Load for Property{
                     .level(DiagnosticLevel::Error)
                     .message(format!("Attempted to read type information from typeck while loading property into memmy, found None."))
                     .build();
-                return Err(diagnosis)
+                memmy.emit_diagnostic(&[], &[diagnosis]);
+                return Err(())
             }
         };
         
@@ -101,6 +106,9 @@ impl Load for Property{
             },
             pos,
             expression: expr,
+            lifetime: ObjectLifetime{
+                stages: Vec::new()
+            }
         })
     }
 }

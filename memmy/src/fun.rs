@@ -15,23 +15,24 @@ use core::{
 
 use notices::{
     DiagnosticSourceBuilder,
-    DiagnosticSource,
     DiagnosticLevel
 };
 
+use ty::Ty;
+
 #[derive(Debug, Clone)]
-pub struct Fun{
+pub struct Fun<'a>{
     ident: Identifier,
     params: Vec<FunParam>,
     pos: BiPos,
-    return_type: Identifier,
-    body: Vec<Statement>
+    return_type: Ty,
+    body: Vec<Statement<'a>>
 }
 
-impl Load for Fun{
-    type Output = Fun;
+impl<'a> Load for Fun<'a>{
+    type Output = Fun<'a>;
 
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource> {
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
@@ -39,12 +40,15 @@ impl Load for Fun{
                     .message(msg)
                     .level(DiagnosticLevel::Error)
                     .build();
-                return Err(diagnosis)
+                memmy.emit_diagnostic(&[], &[diagnosis]);
+                return Err(())
             }
         };
         let ident = match Identifier::load(chunk, memmy){
             Ok(ident) => ident,
-            Err(diag) => return Err(diag)
+            Err(()) => {
+                return Err(())
+            }
         };
         let mut params = vec![];
         loop{
@@ -57,9 +61,11 @@ impl Load for Fun{
                 _ => break
             }
         }
-        let return_type = match Identifier::load(chunk, memmy){
-            Ok(ident) => ident,
-            Err(diag) => return Err(diag)
+        let return_type = match Ty::load(chunk, memmy){
+            Ok(ty) => ty,
+            Err(()) => {
+                return Err(())
+            }
         };
         let mut body = vec![];
         loop{
@@ -86,41 +92,34 @@ impl Load for Fun{
 #[derive(Debug, Clone)]
 pub struct FunParam{
     ident: Identifier,
-    typename: Identifier,
+    typename: Ty,
     pos: BiPos,
 }
 
 impl Load for FunParam{
     type Output = FunParam;
 
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource> {
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()> {
         let pos = match chunk.read_pos(){
             Ok(pos) => pos,
             Err(msg) => {
                 let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
                     .message(msg)
                     .build();
-                return Err(diagnosis)
+                memmy.emit_diagnostic(&[], &[diagnosis]);
+                return Err(())
             }
         };
         let ident = match Identifier::load(chunk, memmy){
             Ok(ident) => ident,
-            Err(diag) => return Err(diag)
+            Err(()) => return Err(())
         };
-        match chunk.read_instruction(){
-            Some(HIRInstruction::Integer) => {},
-            Some(_) => {},
-            None => {
-                let diagnosis = DiagnosticSourceBuilder::new(memmy.module_name.clone(), 0)
-                    .message(format!("Expected to read instruction for type information. This is a compiler bug and should only be seen during development."))
-                    .build();
-                return Err(diagnosis)
-            }
-        }
-        let typename = match Identifier::load(chunk, memmy){
-            Ok(ident) => ident,
-            Err(diag) => return Err(diag)
+
+        let typename = match Ty::load(chunk, memmy){
+            Ok(ty) => ty,
+            Err(()) => return Err(())
         };
+
         Ok(FunParam{
             ident,
             typename,

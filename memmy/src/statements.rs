@@ -13,28 +13,27 @@ use core::pos::BiPos;
 use ir_traits::{ ReadInstruction };
 
 use notices::{
-    DiagnosticSource,
     DiagnosticSourceBuilder,
     DiagnosticLevel
 };
 
 #[derive(Debug, Clone)]
-pub struct Statement{
+pub struct Statement<'a>{
     pos: BiPos,
-    kind: StatementKind,
+    kind: StatementKind<'a>,
 }
 
 #[derive(Debug, Clone)]
-pub enum StatementKind{
-    Property(Property),
-    Fun(Fun),
+pub enum StatementKind<'a>{
+    Property(Property<'a>),
+    Fun(Fun<'a>),
     Local(Local)
 }
 
-impl Load for Statement{
-    type Output = Statement;
+impl<'a> Load for Statement<'a>{
+    type Output = Statement<'a>;
 
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource> {
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()> {
         let ins = chunk.read_instruction();
         match &ins{
             Some(HIRInstruction::Fn) => {
@@ -49,7 +48,8 @@ impl Load for Statement{
                             .level(DiagnosticLevel::Error)
                             .message(msg)
                             .build();
-                        return Err(diagnosis)
+                        memmy.emit_diagnostic(&[], &[diagnosis]);
+                        return Err(())
                     }
                 };
                 Ok(Statement{
@@ -69,7 +69,8 @@ impl Load for Statement{
                             .level(DiagnosticLevel::Error)
                             .message(msg)
                             .build();
-                        return Err(diagnosis)
+                        memmy.emit_diagnostic(&[], &[diagnosis]);
+                        return Err(())
                     }
                 };
                 Ok(Statement{
@@ -89,7 +90,8 @@ impl Load for Statement{
                             .level(DiagnosticLevel::Error)
                             .message(msg)
                             .build();
-                        return Err(diagnosis)
+                        memmy.emit_diagnostic(&[], &[diagnosis]);
+                        return Err(())
                     }
                 };
                 Ok(Statement{
@@ -102,7 +104,8 @@ impl Load for Statement{
                         .message(format!("This feature is not yet implemented: {:?}", ins.clone().unwrap()))
                         .level(DiagnosticLevel::Error)
                         .build();
-                return Err(diagnosis)
+                    memmy.emit_diagnostic(&[], &[diagnosis]);
+                    return Err(())
             }
         }
         

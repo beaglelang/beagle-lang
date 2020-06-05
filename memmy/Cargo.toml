@@ -15,3 +15,5 @@ num-derive = "0.2"
 ir_traits = { path = "../ir_traits", version = "*" }
 futures = { version = "*", features = ["thread-pool"] }
 module_messages = { path = "../module_messages" }
+ty = { path = "../ty", version = "*" }
+mutable = { path = "../mutable", version = "*" }

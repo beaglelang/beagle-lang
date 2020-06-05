@@ -32,14 +32,17 @@ mod fun;
 mod local;
 mod expr;
 mod module;
+mod lifetime;
+mod ty;
+mod mutability;
 
 pub trait Load{
     type Output;
-    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, DiagnosticSource>;
+    fn load(chunk: &Chunk, memmy: &MemmyGenerator) -> Result<Self::Output, ()>;
 }
 
 pub trait Check{
-    fn check(&self, memmy: &MemmyGenerator) -> Result<(), DiagnosticSource>;
+    fn check(&self, memmy: &MemmyGenerator) -> Result<(), ()>;
 }
 
 pub trait Unload{
@@ -50,14 +53,6 @@ pub trait Unload{
 struct Mutability{
     mutable: bool,
     pos: BiPos,
-}
-
-#[allow(dead_code)]
-struct MemmyElement{
-    bc_index: usize,
-    count: usize,
-    //
-    refs: Vec<(String, usize)>
 }
 
 pub struct MemmyManager{
@@ -89,23 +84,30 @@ impl MemmyManager{
 #[allow(dead_code)]
 pub struct MemmyGenerator{
     module_name: String,
-    symbol_table: Vec<MemmyElement>,
     final_chunk: Chunk,
     mir_tx: Sender<Option<Chunk>>,
     typeck_rx: Receiver<Option<Chunk>>,
-    notice_tx: Sender<Option<Diagnostic>>,
+    diagnostic_tx: Sender<Option<Diagnostic>>,
     master_tx: Sender<ModuleMessage>,
     master_rx: Arc<Mutex<Receiver<ModuleMessage>>>,
 }
 
 impl MemmyGenerator{
 
-    pub fn start(module_name: String, mir_tx: Sender<Option<Chunk>>, notice_tx: Sender<Option<Diagnostic>>, typeck_rx: Receiver<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>) -> Result<(),()>{
+    pub fn emit_diagnostic(&self, notes: &[String], diag_sources: &[DiagnosticSource]){
+        let diagnostic = DiagnosticBuilder::new(DiagnosticLevel::Error)
+                .message(format!("An error occurred during memory analysis"))
+                .add_sources(diag_sources)
+                .add_notes(notes)
+                .build();
+        self.diagnostic_tx.send(Some(diagnostic)).unwrap();
+    }
+
+    pub fn start(module_name: String, mir_tx: Sender<Option<Chunk>>, diagnostic_tx: Sender<Option<Diagnostic>>, typeck_rx: Receiver<Option<Chunk>>, master_tx: Sender<ModuleMessage>, master_rx: Arc<Mutex<Receiver<ModuleMessage>>>) -> Result<(),()>{
         let memmy = Self{
             module_name,
-            symbol_table: Vec::new(),
             mir_tx,
-            notice_tx: notice_tx.clone(),
+            diagnostic_tx: diagnostic_tx.clone(),
             typeck_rx,
             final_chunk: Chunk::new(),
             master_tx,
@@ -120,12 +122,7 @@ impl MemmyGenerator{
             };
             let statement = match statements::Statement::load(&chunk, &memmy){
                 Ok(statement) => statement,
-                Err(diag) => {
-                    let diagnostic = DiagnosticBuilder::new(DiagnosticLevel::Error)
-                        .add_source(diag)
-                        .message(format!("An error occurred during memory analysis"))
-                        .build();
-                    notice_tx.send(Some(diagnostic)).unwrap();
+                Err(()) => {
                     return Err(())
                 }
             };

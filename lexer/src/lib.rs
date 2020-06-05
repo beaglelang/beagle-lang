@@ -97,8 +97,12 @@ impl<'a, 'b> Lexer{
                 self.source = Some(chars.as_str().to_string());
                 match new_c {
                     Some(c) if c.is_whitespace() => {
+                        //Don't advance the column because technically with DOS/Windows, \r\n is supposed to act together, for for cross platform purposes, we must treat carriage return special
+                        if c == '\r'{
+                            return new_c;
+                        }
                         self.current_pos.next_col_end();
-                        if c == '\n' || c == '\r' {
+                        if c == '\n' {
                             return new_c;
                         }
                     }
@@ -129,8 +133,12 @@ impl<'a, 'b> Lexer{
                 self.source = Some(chars.as_str().to_string());
                 match new_c {
                     Some(c) if c.is_whitespace() => {
+                        //Don't advance the column because technically with DOS/Windows, \r\n is supposed to act together, for for cross platform purposes, we must treat carriage return special
+                        if c == '\r'{
+                            return new_c;
+                        }
                         self.current_pos.next_col();
-                        if c == '\n' || c == '\r' {
+                        if c == '\n'{
                             return new_c;
                         }
                     }
@@ -202,7 +210,7 @@ impl<'a, 'b> Lexer{
                 break;
             }
         }
-        let slice = match self.input.get(start_idx - 1..self.char_idx) {
+        let slice = match self.input.get(start_idx..self.char_idx) {
             Some(s) => s,
             None => {
                 return Some(tokens::LexerToken {
@@ -253,7 +261,7 @@ impl<'a, 'b> Lexer{
     #[inline]
     fn string(&mut self) -> Option<tokens::LexerToken> {
         let start_idx = self.char_idx;
-        self.advance().unwrap();
+        self.advance_end().unwrap();
         while let Some(c) = self.advance_end() {
             if c == '\"' {
                 break;
