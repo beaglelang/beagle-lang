@@ -807,6 +807,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "symbol_resolver"
+version = "0.1.0"
+dependencies = [
+ "core",
+ "expr",
+ "futures",
+ "ident",
+ "ir",
+ "ir_derive",
+ "ir_traits",
+ "module_messages",
+ "mutable",
+ "notices",
+ "stmt",
+ "ty",
+]
+
+[[package]]
 name = "symbol_table"
 version = "0.1.0"
 dependencies = [

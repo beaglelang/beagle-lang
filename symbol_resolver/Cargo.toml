@@ -1,0 +1,21 @@
+[package]
+name = "symbol_resolver"
+version = "0.1.0"
+authors = ["Alex Couch <alcouch65@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures = { version = "*", features = ["thread-pool"] }
+ir_traits = { path = "../ir_traits", version = "*" }
+ir_derive = { path = "../ir_derive", version = "*" }
+ident = { path = "../ident" }
+mutable = { path = "../mutable" }
+ty = { path = "../ty" }
+expr = { path = "../expr" }
+stmt = { path = "../stmt" }
+module_messages = { path = "../module_messages" }
+ir = { path = "../ir", version = "*" }
+notices = { path = "../notices", version = "*" }
+core = { path = "../core", version = "*" }

@@ -146,7 +146,7 @@ impl<'a> Typeck{
                 .level(DiagnosticLevel::Error)
                 .message(format!("The master channel was closed??"))
                 .build();
-                return Err(diag);
+            return Err(diag);
         }
         let master_rx_lock = match self.master_rx.lock(){
             Ok(lock ) => lock,

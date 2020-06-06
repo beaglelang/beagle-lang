@@ -57,6 +57,13 @@ pub enum HIRInstruction {
     //aka 'void'
     Unit,
     None,
+
+    ///A source level reference, which is then analyzed by memmy to generate the appropriate memory managememnt code.
+    ///If this reference is to a property, it gets converted into a heap reference,
+    ///But if this is a reference to a local, it gets converted into either a move or copy instruction.
+    ///A reference to a function is just a function call
+    ///A reference to a type is a type member access, either constructor, or associated member access.
+    Reference,
     
     Halt,
 }
