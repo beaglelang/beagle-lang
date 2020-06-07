@@ -122,6 +122,10 @@ impl Unload for TyValueElement{
             TyValueElement::Unit => {
                 chunk.write_instruction(HIRInstruction::Unit);
             }
+            TyValueElement::Ref(term) => {
+                chunk.write_instruction(HIRInstruction::Reference);
+                chunk.write_string(term.clone());
+            }
         }
         Ok(chunk)
     }

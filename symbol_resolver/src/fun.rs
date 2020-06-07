@@ -1,13 +1,3 @@
-use ident::Identifier;
-use ty::Ty;
-use stmt::{
-    Statement,
-    fun::{
-        Fun,
-        FunParam
-    },
-};
-
 use ir::{
     Chunk,
 };
@@ -15,15 +5,33 @@ use ir::{
 use super::{
     SymbolResolver,
     Load,
-    Unload,
+    ident::Identifier,
+    statement::Statement
 };
 
 use ir::hir::HIRInstruction;
-use ir_traits::{ReadInstruction, WriteInstruction};
+use ir_traits::{ReadInstruction};
 use notices::{
     DiagnosticSourceBuilder,
     DiagnosticLevel,
 };
+
+use core::pos::BiPos;
+
+#[derive(Debug, Clone)]
+pub struct Fun{
+    pub ident: Identifier,
+    pub return_ty: Identifier,
+    pub params: Vec<FunParam>,
+    pub body: Vec<Statement>,
+    pub pos: BiPos,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunParam{
+    ident: Identifier,
+    ty: Identifier,
+}
 
 impl Load for Fun{
     type Output = Fun;
@@ -79,23 +87,22 @@ impl Load for Fun{
                 return Err(())
             }
 
-            let param_ident = match Identifier::load(chunk, symbol_resolver){
+            let ident = match Identifier::load(chunk, symbol_resolver){
                 Ok(Some(ident)) => ident,
                 Ok(None) => return Ok(None),
                 Err(msg) => return Err(msg)
             };
-            let param_type = match Ty::load(chunk, symbol_resolver){
+            let ty = match Identifier::load(chunk, symbol_resolver){
                 Ok(Some(ty)) => ty,
                 Ok(None) => return Ok(None),
                 Err(notice) => return Err(notice)
             };
             params.push(FunParam{
-                ident: param_ident,
-                ty: param_type,
-                pos
+                ident,
+                ty,
             });
         }
-        let return_type = match Ty::load(chunk, symbol_resolver){
+        let return_ty = match Identifier::load(chunk, symbol_resolver){
             Ok(Some(ty)) => ty,
             Ok(None) => return Ok(None),
             Err(notice) => return Err(notice)
@@ -176,7 +183,7 @@ impl Load for Fun{
         }
         let fun = Fun{
             ident,
-            ty: return_type,
+            return_ty,
             body: block,
             params,
             pos

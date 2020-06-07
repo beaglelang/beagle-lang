@@ -18,7 +18,6 @@ use notices::{
 
 use ir::{
     Chunk,
-    hir::HIRInstruction
 };
 
 use module_messages::ModuleMessage;
@@ -26,10 +25,11 @@ use module_messages::ModuleMessage;
 mod modules;
 use modules::Module;
 
-use stmt::{
-    Statement
-};
 mod statement;
+use statement::{
+    Statement,
+    StatementKind
+};
 mod property;
 mod mutable;
 mod ident;
@@ -37,6 +37,8 @@ mod ty;
 mod fun;
 mod local;
 mod expr;
+mod symbol;
+use symbol::Symbol;
 
 use core::pos::BiPos;
 
@@ -48,7 +50,15 @@ pub trait Load{
 }
 
 pub trait Unload{
-    fn unload(&self) -> Result<Chunk, ()>;
+    fn unload(&self, typeck: &SymbolResolver) -> Result<Chunk, ()>;
+}
+
+pub trait ResolveSymbols{
+    fn resolve(&self, typeck: &SymbolResolver) -> Result<(), ()>;
+}
+
+pub trait PartialResolve{
+    fn partial_resolve(&self, typeck: &SymbolResolver) -> Result<(), ()>;
 }
 
 pub struct SymbolResolverManager{
@@ -84,7 +94,7 @@ pub struct SymbolResolver{
     diagnostic_tx: Sender<Option<Diagnostic>>
 }
 
-impl SymbolResolver{
+impl<'a> SymbolResolver{
     pub fn request_source_snippet(&self, pos: BiPos) -> Result<String, DiagnosticSource>{
         if let Err(_) = self.master_tx.send(ModuleMessage::SourceRequest(pos)){
             let diag = DiagnosticSourceBuilder::new(self.module_name.clone(), 0)
@@ -128,6 +138,29 @@ impl SymbolResolver{
                     .add_notes(notes)
                     .build();
         self.diagnostic_tx.send(Some(diagnostic)).unwrap();
+    }
+
+    pub fn find_symbol(&self, symbol: String) -> Option<Symbol<'a>>{
+        for stmt in self.module.statements.iter(){
+            match stmt.kind{
+                StatementKind::Property(property) => {
+                    if property.ident.ident == symbol{
+                        return Some(Symbol::Property(&property))
+                    }
+                }
+                StatementKind::Fun(fun) => {
+                    if fun.ident.ident == symbol{
+                        return Some(Symbol::Fun(&fun))
+                    }
+                }
+                StatementKind::Local(local) => {
+                    if local.ident.ident == symbol{
+                        return Some(Symbol::Local(&local))
+                    }
+                }
+            }
+        }
+        return None
     }
 
     fn load(&mut self) -> Result<(),()>{

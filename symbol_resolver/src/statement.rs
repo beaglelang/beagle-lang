@@ -1,6 +1,9 @@
 use crate::{
     SymbolResolver,
     Load,
+    property::Property,
+    fun::Fun,
+    local::Local,
 };
 
 use ir::{
@@ -10,19 +13,25 @@ use ir::{
 
 use ir_traits::ReadInstruction;
 
-use stmt::{
-    Statement,
-    StatementKind,
-    property::Property,
-    fun::Fun,
-    local::Local,
-};
-
 use notices::{
     DiagnosticLevel,
-    DiagnosticSource,
     DiagnosticSourceBuilder
 };
+
+use core::pos::BiPos;
+
+#[derive(Debug, Clone)]
+pub struct Statement{
+    pub kind: StatementKind,
+    pub pos: BiPos,
+}
+
+#[derive(Debug, Clone)]
+pub enum StatementKind{
+    Property(Property),
+    Fun(Fun),
+    Local(Local),
+}
 
 impl Load for Statement{
     type Output = Statement;

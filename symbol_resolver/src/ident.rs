@@ -1,16 +1,22 @@
 use super::{
     SymbolResolver,
     Load,
-    Unload,
 };
 
 use ir::Chunk;
 
-use ident::Identifier;
 use notices::{
     DiagnosticSourceBuilder,
     DiagnosticLevel,
 };
+
+use core::pos::BiPos;
+
+#[derive(Debug, Clone)]
+pub struct Identifier{
+    pub ident: String,
+    pub pos: BiPos
+}
 
 impl Load for Identifier{
     type Output = Identifier;

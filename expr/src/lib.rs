@@ -15,7 +15,7 @@ pub enum ExprElement{
     Grouped(Expr),
     Value(TyValue),
     UnaryOp(OpKind, Expr),
-    Binary(OpKind, Expr, Expr)
+    Binary(OpKind, Expr, Expr),
 }
 
 #[derive(Debug, Clone)]

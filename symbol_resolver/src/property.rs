@@ -1,40 +1,31 @@
 use crate::{
     SymbolResolver,
     Load,
+    ident::Identifier,
+    expr::Expr
 };
 
 use ir::{
     Chunk,
-    hir::HIRInstruction
-};
-
-use ir_traits::ReadInstruction;
-
-use stmt::{
-    Statement,
-    StatementKind,
-    property::Property,
 };
 
 use notices::{
     DiagnosticLevel,
-    DiagnosticSource,
     DiagnosticSourceBuilder
-};
-
-use ty::{
-    Ty,
 };
 
 use mutable::Mutability;
 
-use expr::{
-    Expr,
-};
+use core::pos::BiPos;
 
-use ident::Identifier;
-
-use std::cell::RefCell;
+#[derive(Debug, Clone)]
+pub struct Property{
+    pub ident: Identifier,
+    pub ty: Identifier,
+    pub expr: Expr,
+    pub mutable: Mutability,
+    pub pos: BiPos
+}
 
 impl Load for Property{
     type Output = Property;
@@ -62,7 +53,7 @@ impl Load for Property{
             Err(msg) => return Err(msg)
         };
 
-        let ty = match Ty::load(chunk, symbol_resolver){
+        let ty = match Identifier::load(chunk, symbol_resolver){
             Ok(Some(ty)) => ty,
             Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
@@ -87,7 +78,7 @@ impl Load for Property{
             Property{
                 ident,
                 pos,
-                ty: RefCell::new(ty),
+                ty,
                 expr,
                 mutable
             }

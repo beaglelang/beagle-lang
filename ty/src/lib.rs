@@ -48,6 +48,36 @@ pub enum TyValueElement{
     String(String),
     Bool(bool),
     Custom(String),
+    ///In Beagle, references are integral dependent types, thus they deserve their own spot in TyValueElement
+    ///The String value is a term to which the reference binds to.
+    ///Dependent types:
+    ///```norust
+    ///     a: A
+    ///     x: r(a)
+    ///```  
+    ///In this case, we are making an object with the term `a` and type `A`. Then we create an object with term `x` and type `r(a)`.
+    ///Where `r` is a dependent type that binds to the term `a`.
+    ///
+    ///More formally, this can be expressed as, "there exists, for every term 'a' of type 'A', a type that binds to term 'a'"
+    ///```norust
+    ///     ∃a∈A r(a)
+    ///``` 
+    ///Furthermore, we can express a reference as a relation between two terms, where the domain of such relation takes on the type of the codomain.
+    ///```norust
+    ///     x -> a
+    ///```
+    ///In this case, we have a relation between term 'x' and term 'a', where term 'a' is type 'A', and 'x' is type 'r(a)'.
+    ///What we can extrapolate from this, is the ability to acquire the contravariant relation between an object and it's references
+    ///```norust
+    ///     x <- a
+    ///```
+    ///However, without the proof for this, this relation means nothing. So here is a bit of logic:
+    /// "There exists for every reference termed 'r' of type 'r(a)' an object termed 'a' of type 'A'"
+    ///```norust
+    ///     ∃r∈r(a) a: A
+    ///```
+    ///References can thus be described as bidirectional relations with objects.
+    Ref(String),
     Unit
 }
 

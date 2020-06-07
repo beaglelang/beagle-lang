@@ -1,12 +1,9 @@
 use super::{
     SymbolResolver,
     Load,
-    Unload,
+    ResolveSymbols,
 };
 
-use ty::{ Ty, TyValue, TyValueElement };
-
-use expr::{ Expr, ExprElement, OpKind };
 
 use ir::{
     Chunk,
@@ -15,13 +12,78 @@ use ir::{
 
 use ir_traits::{
     ReadInstruction,
-    WriteInstruction
 };
 
 use notices::{
     DiagnosticLevel,
     DiagnosticSourceBuilder,
 };
+
+use core::pos::BiPos;
+
+#[derive(Debug, Clone)]
+pub struct Expr{
+    pos: BiPos,
+    kind: Box<ExprKind>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExprKind{
+    Binary(OpKind, Expr, Expr),
+    Value(Value),
+}
+
+#[derive(Debug, Clone)]
+pub enum OpKind{
+    Add,
+    Sub,
+    Mul,
+    Div
+}
+
+#[derive(Debug, Clone)]
+pub enum Value{
+    Integer(i32),
+    Float(f32),
+    String(String),
+    Bool(bool),
+    Ref(String),
+    FunCall(String)
+}
+
+impl ResolveSymbols for Value{
+    fn resolve(&self, symbol_resolver: &SymbolResolver) -> Result<(),()>{
+        
+    }
+}
+
+impl ResolveSymbols for Expr{
+    fn resolve(&self, symbol_resolver: &SymbolResolver) -> Result<(),()>{
+        match self.kind.into(){
+            ExprKind::Value(value) => {
+                match value{
+                    Value::Integer(_) | Value::Float(_) | Value::String(_) | Value::Bool(_) => Ok(()),
+                    Value::Ref(ident) => {
+                        match symbol_resolver.find_symbol(ident.clone()){
+                            Some(symbol) => {
+                                match symbol{
+                                    Symbol::Fun(_) => {
+                                        
+                                    }
+                                }
+                                return Ok(())
+                            }
+                            None => {
+                                return Err(())
+                            }
+                        }
+                    }
+                    Self::
+                }
+            }
+        }
+    }
+}
 
 impl Load for Expr{
     type Output = Expr;
@@ -42,65 +104,33 @@ impl Load for Expr{
         match &ins {
             Some(HIRInstruction::Bool) => {
                 let value = chunk.read_bool();
-                let ty = Ty{
-                    ident: "Bool".to_owned(),
-                    pos
-                };
-                let kind = ExprElement::Value(TyValue{
-                    ty: ty.clone(),
-                    elem: TyValueElement::Bool(value),
-                });
+                let kind = ExprKind::Value(Value::Bool(value));
                 return Ok(Some(Expr{
                     kind: Box::new(kind),
-                    ty,
                     pos
                 }));
             }
             Some(HIRInstruction::Integer) => {
                 let value = chunk.read_int();
-                let ty = Ty{
-                    ident: "Integer".to_owned(),
-                    pos
-                };
-                let kind = ExprElement::Value(TyValue{
-                    elem: TyValueElement::Integer(value),
-                    ty: ty.clone(),
-                });
+                let kind = ExprKind::Value(Value::Integer(value));
                 return Ok(Some(Expr{
                     kind: Box::new(kind),
-                    ty,
                     pos
                 }));
             }
             Some(HIRInstruction::Float) => {
                 let value = chunk.read_float();
-                let ty = Ty{
-                    ident: "Float".to_owned(),
-                    pos
-                };
-                let kind = ExprElement::Value(TyValue{
-                    elem: TyValueElement::Float(value),
-                    ty: ty.clone(),
-                });
+                let kind = ExprKind::Value(Value::Float(value));
                 return Ok(Some(Expr{
                     kind: Box::new(kind),
-                    ty,
                     pos
                 }));
             }
             Some(HIRInstruction::String) => {
                 let value = chunk.read_string().to_owned();
-                let ty = Ty{
-                    ident: "String".to_owned(),
-                    pos
-                };
-                let kind = ExprElement::Value(TyValue{
-                    elem: TyValueElement::String(value),
-                    ty: ty.clone(),
-                });
+                let kind = ExprKind::Value(Value::String(value));
                 return Ok(Some(Expr{
                     kind: Box::new(kind),
-                    ty,
                     pos
                 }));
             }
@@ -120,12 +150,11 @@ impl Load for Expr{
                     Err(notice) => return Err(notice)
                 };
                 return Ok(Some(Expr{
-                    kind: Box::new(ExprElement::Binary(
+                    kind: Box::new(ExprKind::Binary(
                         OpKind::Add,
                         left.clone(),
                         right,
                     )),
-                    ty: left.ty,
                     pos
                 }))
             },
@@ -145,12 +174,11 @@ impl Load for Expr{
                     Err(notice) => return Err(notice)
                 };
                 return Ok(Some(Expr{
-                    kind: Box::new(ExprElement::Binary(
-                        OpKind::Add,
+                    kind: Box::new(ExprKind::Binary(
+                        OpKind::Sub,
                         left.clone(),
                         right,
                     )),
-                    ty: left.ty,
                     pos
                 }))
             }
@@ -170,12 +198,11 @@ impl Load for Expr{
                     Err(notice) => return Err(notice)
                 };
                 return Ok(Some(Expr{
-                    kind: Box::new(ExprElement::Binary(
-                        OpKind::Add,
+                    kind: Box::new(ExprKind::Binary(
+                        OpKind::Mul,
                         left.clone(),
                         right,
                     )),
-                    ty: left.ty,
                     pos
                 }))
             }
@@ -195,16 +222,21 @@ impl Load for Expr{
                     Err(notice) => return Err(notice)
                 };
                 return Ok(Some(Expr{
-                    kind: Box::new(ExprElement::Binary(
-                        OpKind::Add,
+                    kind: Box::new(ExprKind::Binary(
+                        OpKind::Div,
                         left.clone(),
                         right,
                     )),
-                    ty: left.ty,
                     pos
                 }))
             }
-            
+            Some(HIRInstruction::Reference) => {
+                let ident = chunk.read_string();
+                return Ok(Some(Expr{
+                    kind: Box::new(ExprKind::Value(Value::Ref(ident.to_owned()))),
+                    pos
+                }))
+            }
             _ => {
                 let source = match symbol_resolver.request_source_snippet(pos){
                     Ok(source) => source,

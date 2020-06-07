@@ -1,7 +1,6 @@
 use super::{
     SymbolResolver,
     Load,
-    Unload,
 };
 
 use ir::{
@@ -9,12 +8,10 @@ use ir::{
     hir::HIRInstruction,
 };
 
-use ir_traits::{ WriteInstruction, ReadInstruction };
+use ir_traits::{ ReadInstruction };
 
 use ty::{
     Ty,
-    TyValueElement,
-    TyValue
 };
 
 use notices::{

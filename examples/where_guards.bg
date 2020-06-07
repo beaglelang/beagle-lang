@@ -1,0 +1,24 @@
+fun A(a: Char, rest: String)
+    = [a, B(rest)] 
+    where a = 'a'
+    else "Expected 'a' but instead got $a"
+
+fun B(b: Char, rest: String)
+    = [b, A(rest)]
+    where b = 'b'
+    else "Expected 'b' but instead got $b"
+
+fun B(b: Char) = b
+    where b = 'b'
+    else "Expected 'b' but instead got $b"
+
+fun main{
+    let parsed = match(A("abab")){
+        Ok(parsed) => parsed,
+        Err(msg) => {
+            println("msg")
+            return
+        }
+    }
+    println(parsed)
+}

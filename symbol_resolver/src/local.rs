@@ -1,27 +1,14 @@
 use super::{
     SymbolResolver,
     Load,
-    Unload,
+    ident::Identifier,
+    expr::Expr
 };
 
-use ty::{
-    Ty,
-};
-use expr::{
-    Expr,
-};
-use ident::Identifier;
 use mutable::Mutability;
-
-use std::cell::RefCell;
 
 use ir::{
     Chunk,
-    hir::HIRInstruction,
-};
-
-use ir_traits::{
-    WriteInstruction
 };
 
 use notices::{
@@ -29,9 +16,16 @@ use notices::{
     DiagnosticSourceBuilder,
 };
 
-use stmt::{
-    local::Local,
-};
+use core::pos::BiPos;
+
+#[derive(Debug, Clone)]
+pub struct Local{
+    pub ident: Identifier,
+    pub ty: Identifier,
+    pub expr: Expr,
+    pub mutable: Mutability,
+    pub pos: BiPos
+}
 
 impl Load for Local{
     type Output = Local;
@@ -59,7 +53,7 @@ impl Load for Local{
             Err(msg) => return Err(msg)
         };
 
-        let ty = match Ty::load(chunk, symbol_resolver){
+        let ty = match Identifier::load(chunk, symbol_resolver){
             Ok(Some(ty)) => ty,
             Ok(None) => return Ok(None),
             Err(msg) => return Err(msg)
@@ -79,7 +73,7 @@ impl Load for Local{
             Local{
                 ident,
                 pos,
-                ty: RefCell::new(ty),
+                ty,
                 expr,
                 mutable
             }

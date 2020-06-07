@@ -31,8 +31,6 @@ impl GetTy for Expr{
     }
 }
 
-
-
 impl Unload for Expr{
     fn unload(&self) -> Result<Chunk, ()> {
         let mut chunk = Chunk::new();
@@ -239,7 +237,7 @@ impl Load for Expr{
                 };
                 return Ok(Some(Expr{
                     kind: Box::new(ExprElement::Binary(
-                        OpKind::Add,
+                        OpKind::Min,
                         left.clone(),
                         right,
                     )),
@@ -264,7 +262,7 @@ impl Load for Expr{
                 };
                 return Ok(Some(Expr{
                     kind: Box::new(ExprElement::Binary(
-                        OpKind::Add,
+                        OpKind::Mul,
                         left.clone(),
                         right,
                     )),
@@ -289,7 +287,7 @@ impl Load for Expr{
                 };
                 return Ok(Some(Expr{
                     kind: Box::new(ExprElement::Binary(
-                        OpKind::Add,
+                        OpKind::Div,
                         left.clone(),
                         right,
                     )),

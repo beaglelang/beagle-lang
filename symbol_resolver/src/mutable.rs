@@ -5,7 +5,6 @@ use ir::{
 use super::{
     SymbolResolver,
     Load,
-    Unload,
 };
 
 use notices::{

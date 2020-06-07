@@ -1,0 +1,74 @@
+fun A(a: Char, rest: String): Result<LinkedList<String>, String>{
+    if(a = 'a'){
+        let ret_link_list = LinkedList<String>()
+        ret_link_list.push(a)
+        let b_result = when(rest.length){
+            1 -> {
+                match(B(rest)){
+                    Ok(b_result) => b_result,
+                    Err(msg) => return Err(msg)
+                }
+            }
+            else -> {
+                match(B(rest.head, rest)){
+                    Ok(b_result) => b_result,
+                    Err(msg) => return Err(msg)
+                }
+            }
+        }
+        ret_link_list.push(b_result)
+        return ret_link_list
+    }else{
+        return Err("Expected 'a' but instead got $a")
+    }
+}
+
+fun B(b: Char, rest: String): Result<LinkedList<String>, String>{
+    if(b = 'b'){
+        let ret_link_list = LinkedList<String>()
+        ret_link_list.push(a)
+        let b_result = when(rest.length){
+            1 -> {
+                match(B(rest)){
+                    Ok(b_result) => b_result,
+                    Err(msg) => return Err(msg)
+                }
+            }
+            else -> {
+                match(B(rest.head, rest)){
+                    Ok(b_result) => b_result,
+                    Err(msg) => return Err(msg)
+                }
+            }
+        }
+        ret_link_list.push(b_result)
+        return ret_link_list
+    }else{
+        return Err("Expected 'b' but instead got $b")
+    }
+}
+
+fun B(b: Char): Result<LinkedList<String>, String>{
+    if(b = 'b'){
+        let ret_link_list = LinkedList<String>()
+        ret_link_list.push(a)
+        let b_result = match(A(rest.head, rest)){
+            Ok(b_result) => b_result,
+            Err(msg) => return Err(msg)
+        }
+        return ret_link_list
+    }else{
+        return Err("Expected 'b' but instead got $b")
+    }
+}
+
+fun main{
+    let a = match(A("abab")){
+        Ok(a) => a,
+        Err(msg) => {
+            println(msg)
+            return
+        }
+    }
+    println(a) //Should return ['a', ['b', ['a']]]
+}
